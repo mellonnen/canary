@@ -174,6 +174,7 @@ void put(lru_cache_t *cache, char *key, int value) {
   if (entry == NULL) {
 
     if (cache->num_elements == cache->capacity) {
+      // do LRU protocol and free the returned pointer.
       destroy_entry(do_lru(cache));
     }
 
@@ -197,10 +198,10 @@ void put(lru_cache_t *cache, char *key, int value) {
     return;
   }
 
-  // Hash collsion, linear scan the bucket.
+  // Hash collision, linear scan the bucket.
   lru_entry_t *prev;
   while (entry != NULL) {
-    // Check if we already have item in cache.
+    // Check if we already have item in cache, update value and move to head.
     if (strcmp(entry->key, key) == 0) {
       entry->value = value;
       move_entry_to_head(cache, entry);
@@ -210,10 +211,12 @@ void put(lru_cache_t *cache, char *key, int value) {
     entry = prev->bucket_next;
   }
 
+  // add new entry to the bucket.
+
   lru_entry_t *remove = NULL;
   // Free space for item if filled to capacity.
   if (cache->num_elements == cache->capacity) {
-    remove = do_lru(cache);
+    remove = do_lru(cache); // do not free pointer immediately.
   }
 
   // Create and insert new element at end of bucket.
@@ -231,6 +234,7 @@ void put(lru_cache_t *cache, char *key, int value) {
     prev->bucket_next = entry;
   }
 
+  // free removed entry;
   if (remove != NULL)
     destroy_entry(remove);
 
