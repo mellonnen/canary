@@ -84,6 +84,8 @@ void test_get() {
   assert(strcmp(cache->tail->key, "limp") == 0);
   assert(*val == 2);
   printf("✅\n");
+
+  destroy_lru_cache(cache);
 }
 
 int main(int argc, char *argv[]) {

@@ -28,12 +28,6 @@ lru_entry_t *create_entry(char *key, int value) {
 }
 
 void destroy_entry(lru_entry_t *entry) {
-  if (entry->bucket_prev != NULL)
-    entry->bucket_prev->bucket_next = entry->bucket_next;
-
-  if (entry->bucket_next != NULL)
-    entry->bucket_prev->bucket_next = entry->bucket_prev;
-
   free(entry->key);
   free(entry);
 }
@@ -101,6 +95,29 @@ lru_entry_t *do_lru(lru_cache_t *cache) {
   return remove;
 }
 
+void move_entry_to_head(lru_cache_t *cache, lru_entry_t *entry) {
+  if (entry == cache->head)
+    return;
+
+  if (entry == cache->tail)
+    cache->tail = entry->lru_prev;
+
+  // Disconnect entry from LRU dll.
+  if (entry->lru_prev != NULL) {
+    entry->lru_prev->lru_next = entry->lru_next;
+  }
+
+  if (entry->lru_next != NULL) {
+    entry->lru_next->lru_prev = entry->lru_prev;
+  }
+
+  // move entry to head of dll.
+  entry->lru_prev = NULL;
+  cache->head->lru_prev = entry;
+  entry->lru_next = cache->head;
+  cache->head = entry;
+  return;
+}
 /* ----------- EXTERNAL API -------------------*/
 
 lru_cache_t *create_lru_cache(size_t capacity) {
@@ -120,11 +137,35 @@ lru_cache_t *create_lru_cache(size_t capacity) {
 }
 
 void destroy_lru_cache(lru_cache_t *cache) {
+  for (size_t i = 0; i < cache->capacity; i++) {
+    lru_entry_t *current = cache->table[i];
+    while (current != NULL) {
+      lru_entry_t *next = current->bucket_next;
+      destroy_entry(current);
+      current = next;
+    }
+  }
   free(cache->table);
   free(cache);
 }
 
-int *get(lru_cache_t *cache, char *key) {}
+int *get(lru_cache_t *cache, char *key) {
+  size_t slot = hash_djb2(key) % cache->capacity;
+
+  lru_entry_t *entry = cache->table[slot];
+
+  if (entry == NULL)
+    return NULL;
+
+  while (entry != NULL) {
+    if (strcmp(entry->key, key) == 0) {
+      move_entry_to_head(cache, entry);
+      return &entry->value;
+    }
+    entry = entry->bucket_next;
+  }
+  return NULL;
+}
 
 void put(lru_cache_t *cache, char *key, int value) {
   size_t slot = hash_djb2(key) % cache->capacity;
@@ -135,7 +176,7 @@ void put(lru_cache_t *cache, char *key, int value) {
   if (entry == NULL) {
 
     if (cache->num_elements == cache->capacity) {
-      free(do_lru(cache));
+      destroy_entry(do_lru(cache));
     }
 
     entry = create_entry(key, value);
@@ -164,27 +205,7 @@ void put(lru_cache_t *cache, char *key, int value) {
     // Check if we already have item in cache.
     if (strcmp(entry->key, key) == 0) {
       entry->value = value;
-
-      if (entry == cache->head)
-        return;
-
-      if (entry == cache->tail)
-        cache->tail = entry->lru_prev;
-
-      // Disconnect entry from LRU dll.
-      if (entry->lru_prev != NULL) {
-        entry->lru_prev->lru_next = entry->lru_next;
-      }
-
-      if (entry->lru_next != NULL) {
-        entry->lru_next->lru_prev = entry->lru_prev;
-      }
-
-      // move entry to head of dll.
-      entry->lru_prev = NULL;
-      cache->head->lru_prev = entry;
-      entry->lru_next = cache->head;
-      cache->head = entry;
+      move_entry_to_head(cache, entry);
       return;
     }
     prev = entry;
@@ -213,7 +234,8 @@ void put(lru_cache_t *cache, char *key, int value) {
   }
 
   if (remove != NULL)
-    free(remove);
+    destroy_entry(remove);
+
   // Insert element at head of LRU ddl.
   cache->head->lru_prev = entry;
   entry->lru_next = cache->head;
