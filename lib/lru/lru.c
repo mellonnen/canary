@@ -1,5 +1,4 @@
 #include "lru.h"
-#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -16,6 +15,7 @@ size_t hash_djb2(const char *str) {
   return hash;
 }
 
+// helper that creates an entry with no dll pointers initialized
 lru_entry_t *create_entry(char *key, int value) {
   lru_entry_t *entry = malloc(sizeof(lru_entry_t) * 1);
   entry->key = malloc(strlen(key) + 1);
@@ -27,55 +27,24 @@ lru_entry_t *create_entry(char *key, int value) {
   return entry;
 }
 
+// helper that frees memory of an entry.
 void destroy_entry(lru_entry_t *entry) {
   free(entry->key);
   free(entry);
 }
 
-void to_string(lru_cache_t *cache) {
-  printf("Map:\n");
-  for (int i = 0; i < cache->capacity; i++) {
-    lru_entry_t *entry = cache->table[i];
-
-    if (entry == NULL) {
-      continue;
-    }
-    printf("slot[%4d]: ", i);
-
-    while (1) {
-      printf("%s=%d ", entry->key, entry->value);
-
-      if (entry->bucket_next == NULL)
-        break;
-
-      entry = entry->bucket_next;
-    }
-    printf("\n");
-  }
-  printf("LRU queue:\n");
-
-  lru_entry_t *entry = cache->head;
-  while (1) {
-    printf("%s ", entry->key);
-    if (entry->lru_next == NULL)
-      break;
-    printf("- ");
-    entry = entry->lru_next;
-  }
-  printf("\n");
-
-  printf("Head = %s\n", cache->head->key);
-  printf("Tail = %s\n", cache->tail->key);
-  printf("\n");
-}
-
+// helper that employs the LRU protocol, by:
+// - Disconnecting tail entry from its potential bucket.
+// - Disconnecting tail entry from LRU queue and set tail pointer.
+//
+// It returns the pointer to the disconnected entry (the previous tail entry)
 lru_entry_t *do_lru(lru_cache_t *cache) {
   lru_entry_t *remove = cache->tail; // entry to remove to free space.
 
   // Remove element from bucket
   if (remove->bucket_prev == NULL && remove->bucket_prev == NULL) {
     size_t slot = hash_djb2(remove->key) % cache->capacity;
-    cache->table[slot] = NULL;
+    cache->entries[slot] = NULL;
   }
 
   // Update previous bucket entry link.
@@ -95,6 +64,7 @@ lru_entry_t *do_lru(lru_cache_t *cache) {
   return remove;
 }
 
+// Helper that moves an entry to the head of the LRU queue.
 void move_entry_to_head(lru_cache_t *cache, lru_entry_t *entry) {
   if (entry == cache->head)
     return;
@@ -120,6 +90,12 @@ void move_entry_to_head(lru_cache_t *cache, lru_entry_t *entry) {
 }
 /* ----------- EXTERNAL API -------------------*/
 
+/**
+ * @brief Creates an instance of an LRU cache.
+ *
+ * @param capacity - how many elements that can be stored in cache.
+ * @return pointer to the cache struct.
+ */
 lru_cache_t *create_lru_cache(size_t capacity) {
   // allocate cache pointer.
   lru_cache_t *cache = malloc(sizeof(lru_cache_t) * 1);
@@ -128,31 +104,44 @@ lru_cache_t *create_lru_cache(size_t capacity) {
 
   cache->head = cache->tail = NULL;
 
-  cache->table = malloc(sizeof(lru_entry_t *) * capacity);
+  cache->entries = malloc(sizeof(lru_entry_t *) * capacity);
 
   for (size_t i = 0; i < capacity; i++) {
-    cache->table[i] = NULL;
+    cache->entries[i] = NULL;
   }
   return cache;
 }
 
+/**
+ * @brief Frees the memory of an LRU cache.
+ *
+ * @param cache - cache to be freed
+ */
 void destroy_lru_cache(lru_cache_t *cache) {
+
   for (size_t i = 0; i < cache->capacity; i++) {
-    lru_entry_t *current = cache->table[i];
+    lru_entry_t *current = cache->entries[i];
     while (current != NULL) {
       lru_entry_t *next = current->bucket_next;
       destroy_entry(current);
       current = next;
     }
   }
-  free(cache->table);
+  free(cache->entries);
   free(cache);
 }
 
+/**
+ * @brief Will fetch (if found) the value cached to the given key.
+ *
+ * @param cache
+ * @param key
+ * @return pointer to the value, NULL means the value is not in the cache.
+ */
 int *get(lru_cache_t *cache, char *key) {
   size_t slot = hash_djb2(key) % cache->capacity;
 
-  lru_entry_t *entry = cache->table[slot];
+  lru_entry_t *entry = cache->entries[slot];
 
   if (entry == NULL)
     return NULL;
@@ -166,11 +155,20 @@ int *get(lru_cache_t *cache, char *key) {
   }
   return NULL;
 }
-
+/**
+ * @brief Will put an key-value-pair into the cache. If the key already exists,
+ * its value will be updated. NOTE: if the cache is full the least recently used
+ * item will be removed.
+ *
+ * @param cache
+ * @param key
+ * @param value
+ */
 void put(lru_cache_t *cache, char *key, int value) {
+
   size_t slot = hash_djb2(key) % cache->capacity;
 
-  lru_entry_t *entry = cache->table[slot];
+  lru_entry_t *entry = cache->entries[slot];
 
   // case for empty slot.
   if (entry == NULL) {
@@ -194,7 +192,7 @@ void put(lru_cache_t *cache, char *key, int value) {
       cache->tail = entry;
 
     // insert into slot.
-    cache->table[slot] = entry;
+    cache->entries[slot] = entry;
     cache->num_elements++;
     return;
   }
@@ -228,7 +226,7 @@ void put(lru_cache_t *cache, char *key, int value) {
   }
 
   if (prev == NULL) {
-    cache->table[slot] = entry;
+    cache->entries[slot] = entry;
   } else {
     prev->bucket_next = entry;
   }
