@@ -85,6 +85,11 @@ void test_get() {
   assert(*val == 2);
   printf("✅\n");
 
+  val = get(cache, "limper");
+  printf("\ttest get entry not in cache...");
+  assert(val == NULL);
+  printf("✅\n");
+
   destroy_lru_cache(cache);
 }
 
