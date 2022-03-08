@@ -96,11 +96,12 @@ void move_entry_to_head(lru_cache_t *cache, lru_entry_t *entry) {
  * @param capacity - how many elements that can be stored in cache.
  * @return pointer to the cache struct.
  */
-lru_cache_t *create_lru_cache(size_t capacity) {
+lru_cache_t *create_lru_cache(size_t capacity, size_t max_key_length) {
   // allocate cache pointer.
   lru_cache_t *cache = malloc(sizeof(lru_cache_t) * 1);
   cache->num_elements = 0;
   cache->capacity = capacity;
+  cache->max_key_length = max_key_length;
 
   cache->head = cache->tail = NULL;
 
@@ -164,7 +165,11 @@ int *get(lru_cache_t *cache, char *key) {
  * @param key
  * @param value
  */
-void put(lru_cache_t *cache, char *key, int value) {
+bool put(lru_cache_t *cache, char *key, int value) {
+
+  // guard statement for key size
+  if (strlen(key) > cache->max_key_length)
+    return false;
 
   size_t slot = hash_djb2(key) % cache->capacity;
 
@@ -195,7 +200,7 @@ void put(lru_cache_t *cache, char *key, int value) {
     // insert into slot.
     cache->entries[slot] = entry;
     cache->num_elements++;
-    return;
+    return true;
   }
 
   // Hash collision, linear scan the bucket.
@@ -205,7 +210,7 @@ void put(lru_cache_t *cache, char *key, int value) {
     if (strcmp(entry->key, key) == 0) {
       entry->value = value;
       move_entry_to_head(cache, entry);
-      return;
+      return true;
     }
     prev = entry;
     entry = prev->bucket_next;
@@ -243,4 +248,5 @@ void put(lru_cache_t *cache, char *key, int value) {
   entry->lru_next = cache->head;
   cache->head = entry;
   cache->num_elements++;
+  return true;
 }

@@ -9,5 +9,8 @@ lru.o: lru.c lru.h
 lrutest: lrutest.c lru.o
 	$(CC) $(CFLAGS) -o $@ $^
 
+test: lrutest
+	./lrutest
+
 clean:
-	rm *.o *.so lrutest
+	rm *.o lrutest

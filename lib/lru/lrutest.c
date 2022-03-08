@@ -4,11 +4,22 @@
 #include <string.h>
 
 void test_put() {
-  lru_cache_t *cache = create_lru_cache(3);
+  lru_cache_t *cache = create_lru_cache(3, 10);
 
-  put(cache, "limp", 1);
-  put(cache, "limpz", 2);
-  put(cache, "limpan", 2);
+  bool ok;
+  printf("\ttest initial put...");
+  ok = put(cache, "limp", 1);
+  assert(ok);
+  ok = put(cache, "limpz", 2);
+  assert(ok);
+  ok = put(cache, "limpan", 2);
+  assert(ok);
+  printf("✅\n");
+
+  printf("\ttest too long key...");
+  ok = put(cache, "limpaaaaaaan", 10);
+  assert(!ok);
+  printf("✅\n");
 
   printf("\ttest num elements...");
   assert(cache->num_elements == 3);
@@ -29,26 +40,30 @@ void test_put() {
   assert(strcmp(cache->head->lru_next->key, "limpz") == 0);
   printf("✅\n");
 
-  put(cache, "limpan", 3);
   printf("\ttest updating head value...");
+  ok = put(cache, "limpan", 3);
+  assert(ok);
   assert(strcmp(cache->head->key, "limpan") == 0);
   assert(cache->head->value == 3);
   printf("✅\n");
 
-  put(cache, "limp", 3);
   printf("\ttest updating entry in middle of LRU queue...");
+  ok = put(cache, "limp", 3);
+  assert(ok);
   assert(strcmp(cache->head->key, "limp") == 0);
   assert(cache->head->value == 3);
   printf("✅\n");
 
   printf("\ttest updating tail entry...");
-  put(cache, "limpz", 3);
+  ok = put(cache, "limpz", 3);
+  assert(ok);
   assert(strcmp(cache->head->key, "limpz") == 0);
   assert(cache->head->value == 3);
   printf("✅\n");
 
-  put(cache, "limpzy", 3);
   printf("\ttest inserting into full cache...");
+  ok = put(cache, "limpzy", 3);
+  assert(ok);
   assert(strcmp(cache->head->key, "limpzy") == 0);
   assert(strcmp(cache->tail->key, "limp") == 0);
   printf("✅\n");
@@ -57,7 +72,7 @@ void test_put() {
 }
 
 void test_get() {
-  lru_cache_t *cache = create_lru_cache(3);
+  lru_cache_t *cache = create_lru_cache(3, 10);
 
   put(cache, "limp", 1);
   put(cache, "limpz", 2);
