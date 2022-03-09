@@ -5,32 +5,33 @@
 #include <stdint.h>
 
 typedef enum {
+  Error,
   // Register shards with cnf_svc
-  register_shard2cnf,
-  register_cnf2mstr,
-  regiser_cnf2flw,
+  RegisterShard2Cnf,
+  RegisterCnf2Mstr,
+  RegisterCnf2Flw,
 
   // Shard heartbeats
-  heartbeat_shard2cnf,
+  HeartbeatShard2Cnf,
 
   // Get shard cnf_svc
-  shardinfo_client2shard,
-  shardinfo_shard2client,
+  ShardInfoClient2Shard,
+  ShardInfoShard2Client,
 
   // Get cache value from shard
-  get_client2shard,
-  get_shard2client,
+  GetClient2Shard,
+  GetShard2Client,
 
   // Put cache value in shard
-  put_client2shard,
-  put_shard2client,
+  PutClient2Mstr,
 
   // Replicate the master shard.
-  replicate_mstr2flwr,
+  ReplicateMstr2Flwr,
 
   // Promote follower shard
-  promote_cnf2shard,
-  promote_shard2cnf
+  PromoteCnf2Mstr,
+  PromoteMstr2Cnf,
+  PromoteCnf2Flwr,
 } CanaryMsgType;
 
 typedef struct {

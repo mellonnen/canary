@@ -8,7 +8,7 @@ void test_msg_serialization() {
   CanaryMsg msg;
   char *payload = "this is a payload";
   uint8_t *buf;
-  msg.type = register_cnf2mstr;
+  msg.type = CanaryRegisterCnf2Mstr;
   msg.payload = (uint8_t *)payload;
   msg.payload_len = strlen(payload) * sizeof(uint8_t);
 
