@@ -40,6 +40,7 @@ typedef struct {
   uint8_t *payload;
 } CanaryMsg;
 
+uint32_t uint32_unpack(uint8_t *);
 uint8_t *serialize(CanaryMsg);
 CanaryMsg *deserialize(uint8_t *);
 

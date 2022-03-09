@@ -7,8 +7,10 @@
 #include <stdlib.h>
 #include <string.h>
 
+/* ----------- EXTERNAL API  ------------------*/
+
 // Converts 4 bytes to a Big-endian 32 bit unsigned integer.
-uint32_t big_endian_32(uint8_t bytes[4]) {
+uint32_t unpack_uint32(uint8_t bytes[4]) {
   return (bytes[0] << 24) + (bytes[1] << 16) + (bytes[2] << 8) + bytes[3];
 }
 
@@ -67,11 +69,11 @@ CanaryMsg *deserialize(uint8_t *buf) {
   int curr = 0;
 
   memcpy(&type_buf, buf + curr, sizeof(CanaryMsgType));
-  msg->type = big_endian_32(type_buf);
+  msg->type = unpack_uint32(type_buf);
   curr += sizeof(CanaryMsgType);
 
   memcpy(&payload_len_buf, buf + curr, sizeof(uint32_t));
-  msg->payload_len = big_endian_32(payload_len_buf);
+  msg->payload_len = unpack_uint32(payload_len_buf);
   curr += sizeof(uint32_t);
 
   msg->payload = malloc(msg->payload_len);
