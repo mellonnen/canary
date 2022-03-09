@@ -4,7 +4,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-void test_serialization() {
+void test_msg_serialization() {
   CanaryMsg msg;
   char *payload = "this is a payload";
   uint8_t *buf;
@@ -24,6 +24,6 @@ void test_serialization() {
 }
 
 int main(int argc, char *argv[]) {
-  test_serialization();
+  test_msg_serialization();
   return 0;
 }
