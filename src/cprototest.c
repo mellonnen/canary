@@ -12,7 +12,7 @@ void test_msg_serialization() {
   msg.payload = (uint8_t *)payload;
   msg.payload_len = strlen(payload) * sizeof(uint8_t);
 
-  printf("\ttest serialization and deserialization...");
+  printf("\t\ttest serialized and deserialized structs match...");
   buf = serialize(msg);
 
   CanaryMsg *msg2 = deserialize(buf);
@@ -24,6 +24,8 @@ void test_msg_serialization() {
 }
 
 int main(int argc, char *argv[]) {
+  printf("\nTESTS FOR CANARY PROTOCOL HELPERS\n\n");
+  printf("\tTesting serialization/deserialization of Canary Messages\n");
   test_msg_serialization();
   return 0;
 }
