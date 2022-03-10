@@ -55,16 +55,16 @@ uint32_t unpack_uint32(uint8_t bytes[4]) {
 }
 
 /**
- * @brief Serializes a `CanaryMsg` into a array of bytes on the format
+ * @brief Serializes a `CanaryMsg` into a buffer of bytes on the format
  *
  * [ msg_type | payload_len | payload ]
  * - msg_type is a unsigned 32 bit Big-endian integer.
  * - payload_len is a unsigned 32 bit Big-endian integer.
  * - payload is a number of bytes specified by payload_len
  *
- * @param msg  - CanaryMsg
- * @return a pointer to a buffer of uint8_t. NULL if there was an error during
- * memory allocation.
+ * @param msg - CanaryMsg
+ * @param buf - **buf
+ * @return The size of the serialized buffer, -1 if something went wrong.
  */
 int serialize(CanaryMsg msg, uint8_t **buf) {
 
@@ -94,11 +94,12 @@ int serialize(CanaryMsg msg, uint8_t **buf) {
 }
 
 /**
- * @brief Deserializes the contents of the provided buffer into a CanaryMsg
- * struct.
+ * @brief Deserializes the contents of the provided buffer into the provided
+ * CanaryMsg struct.
  *
  * @param buf - *uint8_t
- * @return pointer to a CanaryMsg struct allocated on the heap.
+ * @param msg - *CanaryMsg
+ * @return -1 if something went wrong, 0 otherwise.
  */
 int deserialize(uint8_t *buf, CanaryMsg *msg) {
   uint8_t type_buf[sizeof(CanaryMsgType)], payload_len_buf[sizeof(size_t)];
@@ -139,6 +140,13 @@ CanaryMsg *receive_msg(int socket) {
   return msg;
 }
 
+/**
+ * @brief sends the provided CanaryMsg over the socket
+ *
+ * @param socket - int
+ * @param msg - CanaryMsg
+ * @return -1 if something went wrong.
+ */
 int send_msg(int socket, CanaryMsg msg) {
   uint8_t *msg_buf;
   int msg_size = serialize(msg, &msg_buf);
