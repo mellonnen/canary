@@ -1,11 +1,51 @@
 #include "cproto.h"
 
 #include <arpa/inet.h>
+#include <errno.h>
 #include <netinet/in.h>
 #include <stddef.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
+
+/* ----------- HELPERS ------------------------*/
+
+int read_from_socket(int socket, uint8_t *buf, size_t buf_size) {
+  int rc, bytes_read = 0;
+  do {
+    rc = read(socket, buf + bytes_read, buf_size - bytes_read);
+    if (rc <= 0) {
+      if ((errno == EAGAIN || errno == EWOULDBLOCK))
+        continue;
+
+      if (errno != EINTR)
+        return -1;
+    } else {
+      bytes_read += rc;
+    }
+  } while (bytes_read < buf_size);
+  return 0;
+}
+
+int write_to_socket(int socket, uint8_t *buf, size_t buf_size) {
+  int rc, bytes_written = 0;
+
+  do {
+    rc = write(socket, buf + bytes_written, buf_size - bytes_written);
+    if (rc <= 0) {
+      if (errno == EAGAIN || errno == EWOULDBLOCK)
+        continue;
+
+      if (errno != EINTR)
+        return -1;
+    } else {
+      bytes_written += rc;
+    }
+  } while (bytes_written < buf_size);
+  return 0;
+}
 
 /* ----------- EXTERNAL API  ------------------*/
 
@@ -26,13 +66,13 @@ uint32_t unpack_uint32(uint8_t bytes[4]) {
  * @return a pointer to a buffer of uint8_t. NULL if there was an error during
  * memory allocation.
  */
-uint8_t *serialize(CanaryMsg msg) {
+int serialize(CanaryMsg msg, uint8_t **buf) {
 
   // allocate buffer on heap.
-  uint8_t *buf = (uint8_t *)malloc(sizeof(msg.type) + sizeof(msg.payload_len) +
-                                   msg.payload_len + 1);
-  if (buf == NULL) {
-    return NULL;
+  int buf_size = sizeof(msg.type) + sizeof(msg.payload_len) + msg.payload_len;
+  *buf = (uint8_t *)malloc(buf_size);
+  if (*buf == NULL) {
+    return -1;
   }
 
   // Copy the data from the data into a struct.
@@ -40,18 +80,17 @@ uint8_t *serialize(CanaryMsg msg) {
 
   // htonl = "host to network long" (in networking numbers are Big-endian)
   uint32_t n_type = htonl(msg.type);
-  memcpy(buf + curr, &n_type, sizeof(msg.type));
+  memcpy(*buf + curr, &n_type, sizeof(msg.type));
   curr += sizeof(msg.type);
 
   uint32_t n_payload_len = htonl(msg.payload_len);
-  memcpy(buf + curr, &n_payload_len, sizeof(msg.payload_len));
+  memcpy(*buf + curr, &n_payload_len, sizeof(msg.payload_len));
   curr += sizeof(msg.payload_len);
 
-  memcpy(buf + curr, msg.payload, msg.payload_len);
+  memcpy(*buf + curr, msg.payload, msg.payload_len);
   curr += msg.payload_len;
 
-  memcpy(buf + curr, "\n", 1);
-  return buf;
+  return buf_size;
 }
 
 /**
@@ -80,4 +119,42 @@ CanaryMsg *deserialize(uint8_t *buf) {
   memcpy(msg->payload, buf + curr, msg->payload_len);
 
   return msg;
+}
+
+CanaryMsg *receive_msg(int socket) {
+  // Read the size of message.
+  uint32_t msg_size;
+  uint8_t *msg_size_buf = (uint8_t *)&msg_size;
+
+  if (read_from_socket(socket, msg_size_buf, sizeof(msg_size)) == -1)
+    return NULL;
+
+  msg_size = ntohl(msg_size); // convert to the endianess of the host.
+
+  uint8_t msg_buf[msg_size];
+  if (read_from_socket(socket, msg_buf, msg_size) == -1)
+    return NULL;
+
+  return deserialize(msg_buf);
+}
+
+int send_msg(int socket, CanaryMsg msg) {
+  uint8_t *msg_buf;
+  int msg_size = serialize(msg, &msg_buf);
+
+  if (msg_size == -1) {
+    return -1;
+  }
+  msg_size = htonl(msg_size);
+  uint8_t *msg_size_buf = (uint8_t *)&msg_size;
+
+  if (write_to_socket(socket, msg_size_buf, sizeof(msg_size)) == -1)
+    return -1;
+
+  if (write_to_socket(socket, msg_buf, msg_size) == -1)
+    return -1;
+
+  free(msg_buf);
+
+  return 0;
 }

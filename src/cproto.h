@@ -41,7 +41,9 @@ typedef struct {
 } CanaryMsg;
 
 uint32_t uint32_unpack(uint8_t *);
-uint8_t *serialize(CanaryMsg);
+int serialize(CanaryMsg, uint8_t **);
 CanaryMsg *deserialize(uint8_t *);
+CanaryMsg *receive_msg(int);
+int send_msg(int, CanaryMsg);
 
 #endif //__CPROTO_H__

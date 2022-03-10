@@ -10,10 +10,10 @@ void test_msg_serialization() {
   uint8_t *buf;
   msg.type = RegisterCnf2Mstr;
   msg.payload = (uint8_t *)payload;
-  msg.payload_len = strlen(payload) * sizeof(uint8_t);
+  msg.payload_len = strlen(payload) + 1;
 
   printf("\t\ttest serialized and deserialized structs match...");
-  buf = serialize(msg);
+  serialize(msg, &buf);
 
   CanaryMsg *msg2 = deserialize(buf);
   assert(msg.type == msg2->type);
