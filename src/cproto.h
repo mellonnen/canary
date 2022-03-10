@@ -43,7 +43,7 @@ typedef struct {
 uint32_t uint32_unpack(uint8_t *);
 int serialize(CanaryMsg, uint8_t **);
 int deserialize(uint8_t *, CanaryMsg *);
-CanaryMsg *receive_msg(int);
+int receive_msg(int, CanaryMsg *);
 int send_msg(int, CanaryMsg);
 
 #endif //__CPROTO_H__

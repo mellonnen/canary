@@ -21,11 +21,12 @@ int main(int argc, char *argv[]) {
 }
 
 void handle_connection(int client_socket) {
-  CanaryMsg *msg = receive_msg(client_socket);
-  printf("message type received: %d\n", msg->type);
-  printf("payload length received: %d\n", msg->payload_len);
+  CanaryMsg msg;
+  receive_msg(client_socket, &msg);
+  printf("message type received: %d\n", msg.type);
+  printf("payload length received: %d\n", msg.payload_len);
 
-  printf("payload received: %s\n", (char *)msg->payload);
+  printf("payload received: %s\n", (char *)msg.payload);
 }
 
 void run_server() {
