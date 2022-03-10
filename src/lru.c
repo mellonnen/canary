@@ -1,19 +1,9 @@
 #include "lru.h"
+#include "hashing.h"
 #include <stdlib.h>
 #include <string.h>
 
 /* ----------- HELPERS ------------------------*/
-
-// source: http://www.cse.yorku.ca/~oz/hash.html
-size_t hash_djb2(const char *str) {
-  unsigned long hash = 5831;
-  int c;
-
-  while ((c = *str++))
-    hash = ((hash << 5) + hash) + c;
-
-  return hash;
-}
 
 // helper that creates an entry with no dll pointers initialized
 lru_entry_t *create_entry(char *key, int value) {
