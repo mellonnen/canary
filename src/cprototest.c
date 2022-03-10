@@ -5,7 +5,7 @@
 #include <string.h>
 
 void test_msg_serialization() {
-  CanaryMsg msg;
+  CanaryMsg msg, msg2;
   char *payload = "this is a payload";
   uint8_t *buf;
   msg.type = RegisterCnf2Mstr;
@@ -15,10 +15,10 @@ void test_msg_serialization() {
   printf("\t\ttest serialized and deserialized structs match...");
   serialize(msg, &buf);
 
-  CanaryMsg *msg2 = deserialize(buf);
-  assert(msg.type == msg2->type);
-  assert(msg.payload_len == msg2->payload_len);
-  assert(memcmp(msg.payload, msg2->payload, msg.payload_len) == 0);
+  deserialize(buf, &msg2);
+  assert(msg.type == msg2.type);
+  assert(msg.payload_len == msg2.payload_len);
+  assert(memcmp(msg.payload, msg2.payload, msg.payload_len) == 0);
 
   printf("✅\n");
 }

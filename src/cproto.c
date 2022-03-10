@@ -100,8 +100,7 @@ int serialize(CanaryMsg msg, uint8_t **buf) {
  * @param buf - *uint8_t
  * @return pointer to a CanaryMsg struct allocated on the heap.
  */
-CanaryMsg *deserialize(uint8_t *buf) {
-  CanaryMsg *msg = malloc(sizeof(CanaryMsg));
+int deserialize(uint8_t *buf, CanaryMsg *msg) {
   uint8_t type_buf[sizeof(CanaryMsgType)], payload_len_buf[sizeof(size_t)];
 
   // Copy data from tye buffer to the struct.
@@ -117,8 +116,7 @@ CanaryMsg *deserialize(uint8_t *buf) {
 
   msg->payload = malloc(msg->payload_len);
   memcpy(msg->payload, buf + curr, msg->payload_len);
-
-  return msg;
+  return 0;
 }
 
 CanaryMsg *receive_msg(int socket) {
@@ -134,8 +132,11 @@ CanaryMsg *receive_msg(int socket) {
   uint8_t msg_buf[msg_size];
   if (read_from_socket(socket, msg_buf, msg_size) == -1)
     return NULL;
+  CanaryMsg *msg = malloc(sizeof(CanaryMsg *));
+  if (deserialize(msg_buf, msg) == -1)
+    return NULL;
 
-  return deserialize(msg_buf);
+  return msg;
 }
 
 int send_msg(int socket, CanaryMsg msg) {
