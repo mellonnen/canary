@@ -26,7 +26,7 @@ release: $(BINS)
 
 $(CLIENT): $(OBJDIR)/client.o
 $(CNF): $(OBJDIR)/cnf.o
-$(SHARD): $(OBJDIR)/cnf.o $(OBJDIR)/lru.o
+$(SHARD): $(OBJDIR)/cnf.o $(OBJDIR)/lru.o $(OBJDIR)/hashing.o
 
 $(BINS): $(OBJDIR)/cproto.o
 	$(CC) $(CFLAGS) $^ -o $@
@@ -34,7 +34,7 @@ $(BINS): $(OBJDIR)/cproto.o
 $(OBJDIR)/%.o: $(SRCDIR)/%.c
 	$(CC) $(CFLAGS) -c $< -o $@
 
-$(LRUTEST): $(OBJDIR)/lrutest.o $(OBJDIR)/lru.o
+$(LRUTEST): $(OBJDIR)/lrutest.o $(OBJDIR)/lru.o $(OBJDIR)/hashing.o
 $(CPROTOTEST): $(OBJDIR)/cprototest.o $(OBJDIR)/cproto.o
 
 $(LRUTEST) $(CPROTOTEST):
