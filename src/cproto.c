@@ -67,12 +67,6 @@ int write_to_socket(int socket, uint8_t *buf, size_t buf_size) {
 
 /* ----------- EXTERNAL API  ------------------*/
 
-// TODO: refactor deserialize to use ntohl isntead of this function.
-// Converts 4 bytes to a Big-endian 32 bit unsigned integer.
-uint32_t unpack_uint32(uint8_t bytes[4]) {
-  return (bytes[0] << 24) + (bytes[1] << 16) + (bytes[2] << 8) + bytes[3];
-}
-
 /**
  * @brief Serializes a `CanaryMsg` into a buffer of bytes on the format
  *
@@ -80,6 +74,8 @@ uint32_t unpack_uint32(uint8_t bytes[4]) {
  * - msg_type is a unsigned 32 bit Big-endian integer.
  * - payload_len is a unsigned 32 bit Big-endian integer.
  * - payload is a number of bytes specified by payload_len
+ *
+ * NOTE: Allocates memory for the buffer on the heap.
  *
  * @param msg - CanaryMsg
  * @param buf - **buf
@@ -94,7 +90,7 @@ int serialize(CanaryMsg msg, uint8_t **buf) {
   }
 
   int bytes_copied = 0;
-  // htonl = "host to network long" (in networking numbers are Big-endian)
+
   uint32_t n_type = htonl(msg.type);
   memcpy(*buf + bytes_copied, &n_type, sizeof(msg.type));
   bytes_copied += sizeof(msg.type);
@@ -113,32 +109,31 @@ int serialize(CanaryMsg msg, uint8_t **buf) {
  * @brief Deserializes the contents of the provided buffer into the provided
  * CanaryMsg struct.
  *
+ * NOTE: The message payload is allocated on heap.
+ *
  * @param buf - *uint8_t
  * @param msg - *CanaryMsg
  * @return -1 if something went wrong, 0 otherwise.
  */
 int deserialize(uint8_t *buf, CanaryMsg *msg) {
-  uint8_t type_buf[sizeof(CanaryMsgType)], payload_len_buf[sizeof(size_t)];
 
-  // Copy data from tye buffer to the struct.
-  int curr = 0;
+  int bytes_copied = 0;
 
-  memcpy(&type_buf, buf + curr, sizeof(CanaryMsgType));
-  msg->type = unpack_uint32(type_buf);
-  curr += sizeof(CanaryMsgType);
+  // Convert the to host endianess.
+  msg->type = ntohl(*(CanaryMsgType *)(buf + bytes_copied));
+  bytes_copied += sizeof(CanaryMsgType);
 
-  memcpy(&payload_len_buf, buf + curr, sizeof(uint32_t));
-  msg->payload_len = unpack_uint32(payload_len_buf);
-  curr += sizeof(uint32_t);
+  msg->payload_len = ntohl(*(uint32_t *)(buf + bytes_copied));
+  bytes_copied += sizeof(uint32_t);
 
   msg->payload = malloc(msg->payload_len);
-  memcpy(msg->payload, buf + curr, msg->payload_len);
+  memcpy(msg->payload, buf + bytes_copied, msg->payload_len);
   return 0;
 }
 
 /**
  * @brief Receives a message from the provided socket and loads it into the
- * provided CanaryMsg struct
+ * provided CanaryMsg struct.
  *
  * @param socket - int
  * @param msg - *CanaryMsg
