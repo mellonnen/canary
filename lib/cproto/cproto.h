@@ -54,6 +54,8 @@ int pack_short(uint16_t, uint8_t[2]);
 int unpack_short(uint16_t *, uint8_t *);
 int pack_string_int(char *, uint32_t, int, uint8_t *);
 int unpack_string_int(char **, int *, uint8_t *);
+int pack_string_short(char *, uint32_t, uint16_t, uint8_t *);
+int unpack_string_short(char **, uint16_t *, uint8_t *);
 
 int receive_msg(int, CanaryMsg *);
 int send_msg(int, CanaryMsg);

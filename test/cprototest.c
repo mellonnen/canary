@@ -47,25 +47,38 @@ void test_msg_serialization() {
 }
 
 void test_payload_packing() {
-  uint8_t register_buf[2];
-  in_port_t port1 = 8080, port2;
+  uint8_t short_buf[2];
+  uint16_t port1 = 8080, port2;
 
   printf("\t\tTest short  packing/unpacking...");
-  pack_short(port1, register_buf);
-  unpack_short(&port2, register_buf);
+  pack_short(port1, short_buf);
+  unpack_short(&port2, short_buf);
   assert(port1 == port2);
   printf("✅\n");
 
   char *key1 = "limpan", *key2;
   uint32_t key_len = strlen(key1);
   int value1 = 15, value2;
-  uint8_t *put_buf = malloc(sizeof(key_len) + key_len + sizeof(value1));
+  uint8_t *string_int_buf = malloc(sizeof(key_len) + key_len + sizeof(value1));
 
   printf("\t\tTest string-int packing/unpacking...");
-  pack_string_int(key1, key_len, value1, put_buf);
-  unpack_string_int(&key2, &value2, put_buf);
+  pack_string_int(key1, key_len, value1, string_int_buf);
+  unpack_string_int(&key2, &value2, string_int_buf);
   assert(strcmp(key1, key2) == 0);
   assert(value1 == value2);
+  printf("✅\n");
+
+  char *addr1 = "127.0.0.1", *addr2;
+  uint32_t addr_len = strlen("127.0.0.1");
+  port1 = 8080, port2 = 0;
+  uint8_t *string_short_buf =
+      malloc(sizeof(addr_len) + addr_len + sizeof(port1));
+
+  printf("\t\tTest string-short packing/unpacking...");
+  pack_string_short(addr1, addr_len, port1, string_short_buf);
+  unpack_string_short(&addr2, &port2, string_short_buf);
+  assert(strcmp(addr1, addr2) == 0);
+  assert(port2 == port2);
   printf("✅\n");
 }
 

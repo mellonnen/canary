@@ -160,15 +160,43 @@ int pack_string_int(char *key, uint32_t key_len, int value, uint8_t *buf) {
 int unpack_string_int(char **key, int *value, uint8_t *buf) {
   int bytes_unpacked = 0;
 
-  uint32_t key_len;
-  key_len = ntohl(*(uint32_t *)(buf + bytes_unpacked));
-  bytes_unpacked += sizeof(uint32_t);
+  uint32_t key_len = ntohl(*(uint32_t *)(buf + bytes_unpacked));
+  bytes_unpacked += sizeof(key_len);
 
   *key = malloc(key_len);
   memcpy(*key, buf + bytes_unpacked, key_len);
   bytes_unpacked += key_len;
 
   *value = ntohl(*(int *)(buf + bytes_unpacked));
+  return 0;
+}
+
+int pack_string_short(char *str, uint32_t str_len, uint16_t num, uint8_t *buf) {
+  int bytes_packed = 0;
+
+  uint32_t n_str_len = htonl(str_len);
+  memcpy(buf + bytes_packed, &n_str_len, sizeof(n_str_len));
+  bytes_packed += sizeof(n_str_len);
+
+  memcpy(buf + bytes_packed, str, str_len);
+  bytes_packed += str_len;
+
+  uint16_t n_num = htonl(num);
+  memcpy(buf + bytes_packed, &n_num, sizeof(n_num));
+  return 0;
+}
+
+int unpack_string_short(char **str, uint16_t *num, uint8_t *buf) {
+  int bytes_unpacked = 0;
+
+  uint32_t key_len = ntohl(*(uint32_t *)(buf + bytes_unpacked));
+  bytes_unpacked += sizeof(key_len);
+
+  *str = malloc(key_len);
+  memcpy(*str, buf + bytes_unpacked, key_len);
+  bytes_unpacked += key_len;
+
+  *num = ntohs(*(uint16_t *)(buf + bytes_unpacked));
   return 0;
 }
 
