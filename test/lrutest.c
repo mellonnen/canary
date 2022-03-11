@@ -4,7 +4,7 @@
 #include <string.h>
 
 void test_put() {
-  lru_cache_t *cache = create_lru_cache(3, 10);
+  lru_cache_t *cache = create_lru_cache(3);
 
   bool ok;
   printf("\t\ttest initial put...");
@@ -14,11 +14,6 @@ void test_put() {
   assert(ok);
   ok = put(cache, "limpan", 2);
   assert(ok);
-  printf("✅\n");
-
-  printf("\t\ttest too long key...");
-  ok = put(cache, "limpaaaaaaan", 10);
-  assert(!ok);
   printf("✅\n");
 
   printf("\t\ttest num elements...");
@@ -72,7 +67,7 @@ void test_put() {
 }
 
 void test_get() {
-  lru_cache_t *cache = create_lru_cache(3, 10);
+  lru_cache_t *cache = create_lru_cache(3);
 
   put(cache, "limp", 1);
   put(cache, "limpz", 2);

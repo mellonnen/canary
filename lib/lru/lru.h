@@ -22,14 +22,11 @@ typedef struct {
   // Cache capacity
   size_t capacity;
 
-  // Maximum length of key.
-  size_t max_key_length;
-
   size_t num_elements;
   lru_entry_t *head, *tail;
 } lru_cache_t;
 
-lru_cache_t *create_lru_cache(size_t, size_t);
+lru_cache_t *create_lru_cache(size_t);
 void destroy_lru_cache(lru_cache_t *);
 int *get(lru_cache_t *, char *);
 bool put(lru_cache_t *, char *, int);
