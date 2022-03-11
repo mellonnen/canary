@@ -47,11 +47,14 @@ typedef struct {
   in_port_t port;
 } CanaryShardInfo;
 
-int compare_shards(const void *, const void *);
 int serialize(CanaryMsg, uint8_t **);
 int deserialize(uint8_t *, CanaryMsg *);
+int pack_register_payload(in_port_t, uint8_t[2]);
+int unpack_register_payload(in_port_t *, uint8_t *);
+
 int receive_msg(int, CanaryMsg *);
 int send_msg(int, CanaryMsg);
 void send_error_msg(int, const char *);
+int compare_shards(const void *, const void *);
 
 #endif //__CPROTO_H__

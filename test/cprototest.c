@@ -1,8 +1,31 @@
 #include "../lib/cproto/cproto.h"
 #include <assert.h>
+#include <netinet/in.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+void test_msg_serialization();
+void test_payload_packing();
+void test_compare_shards();
+
+int main(int argc, char *argv[]) {
+  printf("\nTESTS FOR CANARY PROTOCOL HELPERS\n\n");
+
+  printf("\tTesting serialization/deserialization of Canary Messages\n");
+  test_msg_serialization();
+  printf("\n");
+
+  printf("\tTesting payload packing/unpacking\n");
+  test_payload_packing();
+  printf("\n");
+
+  printf("\tTesting shard info comparator\n");
+  test_compare_shards();
+  printf("\n");
+
+  return 0;
+}
 
 void test_msg_serialization() {
   CanaryMsg msg, msg2;
@@ -12,7 +35,7 @@ void test_msg_serialization() {
   msg.payload = (uint8_t *)payload;
   msg.payload_len = strlen(payload) + 1;
 
-  printf("\t\ttest serialized and deserialized structs match...");
+  printf("\t\tTest serialized and deserialized structs match...");
   serialize(msg, &buf);
 
   deserialize(buf, &msg2);
@@ -20,6 +43,17 @@ void test_msg_serialization() {
   assert(msg.payload_len == msg2.payload_len);
   assert(memcmp(msg.payload, msg2.payload, msg.payload_len) == 0);
 
+  printf("✅\n");
+}
+
+void test_payload_packing() {
+  uint8_t buf[2];
+  in_port_t port1 = 8080, port2;
+
+  printf("\t\tTest register payload packing/unpacking...");
+  pack_register_payload(port1, buf);
+  unpack_register_payload(&port2, buf);
+  assert(port1 == port2);
   printf("✅\n");
 }
 
@@ -41,13 +75,4 @@ void test_compare_shards() {
   assert(arr[2].id == 2);
   assert(arr[3].id == 3);
   printf("✅\n");
-}
-
-int main(int argc, char *argv[]) {
-  printf("\nTESTS FOR CANARY PROTOCOL HELPERS\n\n");
-  printf("\tTesting serialization/deserialization of Canary Messages\n");
-  test_msg_serialization();
-  printf("\tTesting shard info comparator\n");
-  test_compare_shards();
-  return 0;
 }

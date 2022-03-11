@@ -131,6 +131,17 @@ int deserialize(uint8_t *buf, CanaryMsg *msg) {
   return 0;
 }
 
+int pack_register_payload(in_port_t port, uint8_t buf[2]) {
+  in_port_t n_port = htons(port);
+  memcpy(buf, &n_port, sizeof(n_port));
+  return 1;
+}
+
+int unpack_register_payload(in_port_t *port, uint8_t *buf) {
+  *port = ntohs(*(in_port_t *)buf);
+  return 1;
+}
+
 /**
  * @brief Receives a message from the provided socket and loads it into the
  * provided CanaryMsg struct.
