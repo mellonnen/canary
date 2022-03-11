@@ -1,5 +1,6 @@
 #ifndef __CPROTO_H__
 #define __CPROTO_H__
+#include <netinet/in.h>
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -40,9 +41,17 @@ typedef struct {
   uint8_t *payload;
 } CanaryMsg;
 
+typedef struct {
+  size_t id;
+  struct in_addr ip;
+  in_port_t port;
+} CanaryShardInfo;
+
+int compare_shards(const void *, const void *);
 int serialize(CanaryMsg, uint8_t **);
 int deserialize(uint8_t *, CanaryMsg *);
 int receive_msg(int, CanaryMsg *);
 int send_msg(int, CanaryMsg);
+void send_error_msg(int, const char *);
 
 #endif //__CPROTO_H__

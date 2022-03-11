@@ -23,9 +23,31 @@ void test_msg_serialization() {
   printf("✅\n");
 }
 
+void test_compare_shards() {
+  CanaryShardInfo arr[4] = {{0, 0, 0}, {3, 0, 0}, {1, 0, 0}};
+  printf("\t\tTest with 3 initialized elements...");
+  qsort(arr, 3, sizeof(CanaryShardInfo), compare_shards);
+
+  assert(arr[0].id == 0);
+  assert(arr[1].id == 1);
+  assert(arr[2].id == 3);
+  printf("✅\n");
+
+  printf("\t\tTest add element...");
+  arr[3] = (CanaryShardInfo){2, 0, 0};
+  qsort(arr, 4, sizeof(CanaryShardInfo), compare_shards);
+  assert(arr[0].id == 0);
+  assert(arr[1].id == 1);
+  assert(arr[2].id == 2);
+  assert(arr[3].id == 3);
+  printf("✅\n");
+}
+
 int main(int argc, char *argv[]) {
   printf("\nTESTS FOR CANARY PROTOCOL HELPERS\n\n");
   printf("\tTesting serialization/deserialization of Canary Messages\n");
   test_msg_serialization();
+  printf("\tTesting shard info comparator\n");
+  test_compare_shards();
   return 0;
 }

@@ -2,6 +2,7 @@
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -10,26 +11,26 @@
 
 #define CNFPORT 8080
 #define BACKLOG 100
+
+#define MAXSHARDS 100
+
+CanaryShardInfo shards[MAXSHARDS];
+
 typedef struct sockaddr_in SA_IN;
 typedef struct sockaddr SA;
 
-void run_server();
+void handle_args(int argc, char *argv);
+void run();
+
+void handle_connection(int client_socket);
+void handle_shard_registration(uint8_t *buf, uint32_t buf_size);
 
 int main(int argc, char *argv[]) {
-  run_server();
+  run();
   return 0;
 }
 
-void handle_connection(int client_socket) {
-  CanaryMsg msg;
-  receive_msg(client_socket, &msg);
-  printf("message type received: %d\n", msg.type);
-  printf("payload length received: %d\n", msg.payload_len);
-
-  printf("payload received: %s\n", (char *)msg.payload);
-}
-
-void run_server() {
+void run() {
   int server_socket, client_socket, addr_size;
   SA_IN server_addr, client_addr;
 
@@ -61,6 +62,27 @@ void run_server() {
       continue;
     }
 
+    printf("IP of client is: %s\n", inet_ntoa(client_addr.sin_addr));
+    printf("Port of client is: %d\n", ntohs(client_addr.sin_port));
     handle_connection(client_socket);
   }
 }
+
+void handle_connection(int client_socket) {
+  CanaryMsg msg;
+
+  if (receive_msg(client_socket, &msg) == -1) {
+    send_error_msg(client_socket, "Could not receive message");
+  }
+
+  switch (msg.type) {
+  case RegisterShard2Cnf:
+    handle_shard_registration(msg.payload, msg.payload_len);
+    break;
+  default:
+    send_error_msg(client_socket, "Incorrect Canary message type");
+    break;
+  }
+}
+
+void handle_shard_registration(uint8_t *buf, uint32_t buf_len){};

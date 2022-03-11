@@ -185,3 +185,20 @@ int send_msg(int socket, CanaryMsg msg) {
 
   return 0;
 }
+
+void send_error_msg(int socket, const char *error_msg) {
+  CanaryMsg msg = {.type = Error,
+                   .payload_len = strlen(error_msg),
+                   .payload = (uint8_t *)error_msg};
+  send_msg(socket, msg);
+}
+
+int compare_shards(const void *a, const void *b) {
+  CanaryShardInfo *x = (CanaryShardInfo *)a;
+  CanaryShardInfo *y = (CanaryShardInfo *)b;
+  if (x->id > y->id)
+    return +1;
+  if (x->id < y->id)
+    return -1;
+  return 0;
+}
