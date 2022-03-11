@@ -181,7 +181,7 @@ int pack_string_short(char *str, uint32_t str_len, uint16_t num, uint8_t *buf) {
   memcpy(buf + bytes_packed, str, str_len);
   bytes_packed += str_len;
 
-  uint16_t n_num = htonl(num);
+  uint16_t n_num = htons(num);
   memcpy(buf + bytes_packed, &n_num, sizeof(n_num));
   return 0;
 }

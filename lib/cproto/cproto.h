@@ -16,8 +16,8 @@ typedef enum {
   HeartbeatShard2Cnf,
 
   // Get shard cnf_svc
-  ShardInfoClient2Shard,
-  ShardInfoShard2Client,
+  ShardInfoClient2Cnf,
+  ShardInfoCnf2Client,
 
   // Get cache value from shard
   GetClient2Shard,
