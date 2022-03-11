@@ -4,6 +4,7 @@
 #include "../hashing/hashing.h"
 #include <stdbool.h>
 #include <stddef.h>
+
 typedef struct lru_entry_t {
   char *key;
   int value;
@@ -29,6 +30,7 @@ typedef struct {
 lru_cache_t *create_lru_cache(size_t);
 void destroy_entry(lru_entry_t *entry);
 void destroy_lru_cache(lru_cache_t *);
+
 int *get(lru_cache_t *, char *);
 lru_entry_t *put(lru_cache_t *, char *, int);
 
