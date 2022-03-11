@@ -35,9 +35,11 @@ int main(int argc, char *argv[]) {
     printf("Error connecting to cnf: %s\n", strerror(errno));
     exit(EXIT_FAILURE);
   }
-  char *key = "limpan";
+  char *key = argv[3];
   uint32_t key_len = strlen(key);
-  int value = 15, payload_len = sizeof(key_len) + key_len + sizeof(value);
+  int value = atoi(argv[4]);
+  size_t payload_len = sizeof(key_len) + key_len + sizeof(value);
+
   uint8_t *payload = malloc(payload_len);
   pack_put_payload(key, key_len, value, payload);
 

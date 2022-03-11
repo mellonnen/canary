@@ -145,7 +145,13 @@ void handle_put(uint8_t *payload) {
   int value;
 
   unpack_put_payload(&key, &value, payload);
-  put(cache, key, value);
+  lru_entry_t *removed = put(cache, key, value);
 
-  printf("Put key value pair (%s, %d)\n\n", key, value);
+  printf("Put key value pair (%s, %d) ", key, value);
+  if (removed != NULL) {
+    printf("and expelled key value pair (%s, %d) from cache\n", removed->key,
+           removed->value);
+  } else {
+    printf("in cache\n");
+  }
 }
