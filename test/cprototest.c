@@ -58,7 +58,11 @@ void test_payload_packing() {
 }
 
 void test_compare_shards() {
-  CanaryShardInfo arr[4] = {{0, 0, 0}, {3, 0, 0}, {1, 0, 0}};
+  CanaryShardInfo arr[4] = {
+      {.id = 0},
+      {.id = 3},
+      {.id = 1},
+  };
   printf("\t\tTest with 3 initialized elements...");
   qsort(arr, 3, sizeof(CanaryShardInfo), compare_shards);
 
@@ -68,7 +72,7 @@ void test_compare_shards() {
   printf("✅\n");
 
   printf("\t\tTest add element...");
-  arr[3] = (CanaryShardInfo){2, 0, 0};
+  arr[3] = (CanaryShardInfo){2};
   qsort(arr, 4, sizeof(CanaryShardInfo), compare_shards);
   assert(arr[0].id == 0);
   assert(arr[1].id == 1);
