@@ -4,7 +4,13 @@
 
 /* ----------- HELPERS ------------------------*/
 
-// helper that creates an entry with no dll pointers initialized
+/**
+ * @brief helper that allocates a entry on the heap.
+ *
+ * @param key - char *
+ * @param value - int
+ * @return pointer to entry
+ */
 lru_entry_t *create_entry(char *key, int value) {
   lru_entry_t *entry = malloc(sizeof(lru_entry_t) * 1);
   entry->key = malloc(strlen(key) + 1);
@@ -16,11 +22,15 @@ lru_entry_t *create_entry(char *key, int value) {
   return entry;
 }
 
-// helper that employs the LRU protocol, by:
-// - Disconnecting tail entry from its potential bucket.
-// - Disconnecting tail entry from LRU queue and set tail pointer.
-//
-// It returns the pointer to the disconnected entry (the previous tail entry)
+/**
+ * @brief  helper that employs the LRU protocol, by:
+ * - Disconnecting tail entry from its potential bucket.
+ * - Disconnecting tail entry from LRU queue and set tail pointer.
+ *
+ * @param cache - lru_cache_t
+ * @return  It returns the pointer to the disconnected entry (the previous tail
+ * entry)
+ */
 lru_entry_t *do_lru(lru_cache_t *cache) {
   lru_entry_t *remove = cache->tail; // entry to remove to free space.
 
@@ -73,10 +83,12 @@ void move_entry_to_head(lru_cache_t *cache, lru_entry_t *entry) {
 }
 /* ----------- EXTERNAL API -------------------*/
 
+// UTILITY FUNCTIONS
+
 /**
  * @brief Creates an instance of an LRU cache.
  *
- * @param capacity - how many elements that can be stored in cache.
+ * @param capacity - size_t
  * @return pointer to the cache struct.
  */
 lru_cache_t *create_lru_cache(size_t capacity) {
@@ -123,6 +135,8 @@ void destroy_entry(lru_entry_t *entry) {
   free(entry->key);
   free(entry);
 }
+
+// OPERATIONS
 
 /**
  * @brief Will fetch (if found) the value cached to the given key.
