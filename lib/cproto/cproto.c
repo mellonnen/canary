@@ -17,7 +17,7 @@
  * buffer.
  *
  * @param socket - int
- * @param buf - *uint8_t
+ * @param buf - uint8_t *
  * @param buf_size - size_t
  * @return -1 if something went wrong.
  */
@@ -43,7 +43,7 @@ int read_from_socket(int socket, uint8_t *buf, size_t buf_size) {
  * socket.
  *
  * @param socket - int
- * @param buf - *uint8_t
+ * @param buf - uint8_t *
  * @param buf_size - size_t
  * @return -1 if something went wrong.
  */
@@ -78,7 +78,7 @@ int write_to_socket(int socket, uint8_t *buf, size_t buf_size) {
  * NOTE: Allocates memory for the buffer on the heap.
  *
  * @param msg - CanaryMsg
- * @param buf - **buf
+ * @param buf - uint8_t **
  * @return The size of the serialized buffer, -1 if something went wrong.
  */
 int serialize(CanaryMsg msg, uint8_t **buf) {
@@ -112,7 +112,7 @@ int serialize(CanaryMsg msg, uint8_t **buf) {
  * NOTE: The message payload is allocated on heap.
  *
  * @param buf - *uint8_t
- * @param msg - *CanaryMsg
+ * @param msg - CanaryMsg *
  * @return -1 if something went wrong, 0 otherwise.
  */
 int deserialize(uint8_t *buf, CanaryMsg *msg) {
@@ -136,7 +136,7 @@ int deserialize(uint8_t *buf, CanaryMsg *msg) {
  * provided CanaryMsg struct.
  *
  * @param socket - int
- * @param msg - *CanaryMsg
+ * @param msg - CanaryMsg *
  * @return -1 if something went wrong.
  */
 int receive_msg(int socket, CanaryMsg *msg) {
@@ -186,6 +186,12 @@ int send_msg(int socket, CanaryMsg msg) {
   return 0;
 }
 
+/**
+ * @brief Convenience Wrapper `send_msg` for sending an error message.
+ *
+ * @param socket - int
+ * @param error_msg - char *
+ */
 void send_error_msg(int socket, const char *error_msg) {
   CanaryMsg msg = {.type = Error,
                    .payload_len = strlen(error_msg),
@@ -193,6 +199,13 @@ void send_error_msg(int socket, const char *error_msg) {
   send_msg(socket, msg);
 }
 
+/**
+ * @brief Comparator for `CanaryShardInfo` meant to be used in `qsort`.
+ *
+ * @param a - void *
+ * @param b - void *
+ * @return 1 if a > b, -1 if a < b, 0 otherwise.
+ */
 int compare_shards(const void *a, const void *b) {
   CanaryShardInfo *x = (CanaryShardInfo *)a;
   CanaryShardInfo *y = (CanaryShardInfo *)b;
