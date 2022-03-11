@@ -24,7 +24,7 @@ int main(int argc, char *argv[]) {
 
   bzero(&servaddr, sizeof(servaddr));
   servaddr.sin_family = AF_INET;
-  servaddr.sin_port = htons(CNFPORT);
+  servaddr.sin_port = htons(atoi(argv[2]));
 
   if (inet_pton(AF_INET, argv[1], &servaddr.sin_addr) < 0) {
     printf("Error converting string IP to bytes: %s\n", strerror(errno));
@@ -35,10 +35,15 @@ int main(int argc, char *argv[]) {
     printf("Error connecting to cnf: %s\n", strerror(errno));
     exit(EXIT_FAILURE);
   }
+  char *key = "limpan";
+  uint32_t key_len = strlen(key);
+  int value = 15, payload_len = sizeof(key_len) + key_len + sizeof(value);
+  uint8_t *payload = malloc(payload_len);
+  pack_put_payload(key, key_len, value, payload);
 
-  CanaryMsg msg = {.type = ShardInfoClient2Shard,
-                   .payload_len = 7,
-                   .payload = (uint8_t *)"limpan"};
+  CanaryMsg msg = {
+      .type = PutClient2Mstr, .payload_len = payload_len, .payload = payload};
+
   send_msg(sockfd, msg);
   return 0;
 }

@@ -23,24 +23,26 @@ typedef struct sockaddr SA;
 typedef struct in_addr IA;
 
 void handle_args(int argc, char *argv);
-void run();
+int run();
 
 void handle_connection(int client_socket, IA client_addr);
 void handle_shard_registration(int socket, uint8_t *payload, IA shard_addr);
 
 int main(int argc, char *argv[]) {
   srandom(time(NULL));
-  run();
+  if (run() == -1)
+    exit(EXIT_FAILURE);
+
   return 0;
 }
 
-void run() {
+int run() {
   int server_socket, client_socket, addr_size;
   SA_IN server_addr, client_addr;
 
   if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
     printf("Error creating socket: %s\n", strerror(errno));
-    exit(EXIT_FAILURE);
+    return -1;
   }
 
   server_addr.sin_family = AF_INET;
@@ -49,7 +51,7 @@ void run() {
 
   if ((bind(server_socket, (SA *)&server_addr, sizeof(server_addr))) < 0) {
     printf("Error binding socket: %s\n", strerror(errno));
-    exit(EXIT_FAILURE);
+    return -1;
   }
   if ((listen(server_socket, BACKLOG)) == -1) {
     printf("Error during listen\n");
@@ -57,7 +59,7 @@ void run() {
   }
 
   while (1) {
-    printf("Waiting for connections...\n");
+    printf("Waiting for connections...\n\n");
     addr_size = sizeof(SA_IN);
 
     if ((client_socket = accept(server_socket, (SA *)&client_addr,
@@ -66,8 +68,8 @@ void run() {
       continue;
     }
 
-    printf("IP of client is: %s\n", inet_ntoa(client_addr.sin_addr));
-    printf("Port of client is: %d\n", ntohs(client_addr.sin_port));
+    printf("Made connection with %s:%d\n\n", inet_ntoa(client_addr.sin_addr),
+           ntohs(client_addr.sin_port));
     handle_connection(client_socket, client_addr.sin_addr);
   }
 }
@@ -77,6 +79,7 @@ void handle_connection(int socket, IA client_addr) {
 
   if (receive_msg(socket, &msg) == -1) {
     send_error_msg(socket, "Could not receive message");
+    return;
   }
 
   switch (msg.type) {
