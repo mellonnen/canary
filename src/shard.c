@@ -50,10 +50,10 @@ int main(int argc, char *argv[]) {
     printf("Successfully registered shard.\n");
     break;
   case Error:
-    printf("Failed to register shard: %s", msg.payload);
+    printf("Failed to register shard: %s\n", msg.payload);
     break;
   default:
-    printf("Received wrong message type %d", msg.type);
+    printf("Received wrong message type %d\n", msg.type);
     break;
   }
   return 0;

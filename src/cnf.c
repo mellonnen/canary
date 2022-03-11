@@ -13,7 +13,7 @@
 #define CNFPORT 8080
 #define BACKLOG 100
 
-#define MAXSHARDS 100
+#define MAXSHARDS 2
 
 CanaryShardInfo shards[MAXSHARDS];
 int num_shards = 0;
@@ -90,15 +90,17 @@ void handle_connection(int socket, IA client_addr) {
 }
 
 void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
-  in_port_t port = 0;
-  if (num_shards > MAXSHARDS) {
-    printf("Could not register shard at %s:%d", inet_ntoa(addr), port);
+  in_port_t port;
+  unpack_register_payload(&port, payload);
+  if (num_shards >= MAXSHARDS) {
+    printf("Could not register shard at %s:%d\n", inet_ntoa(addr), port);
     send_error_msg(socket, "Reached max shard capacity");
+    return;
   }
 
-  unpack_register_payload(&port, payload);
   CanaryShardInfo shard = {.id = random(), .ip = addr, .port = port};
   shards[num_shards] = shard;
+  num_shards++;
   qsort(shards, num_shards, sizeof(CanaryShardInfo), compare_shards);
   printf("Registered shard : {\n\tid: %ld,\n\tip: %s\n\tport: %d\n}\n",
          shard.id, inet_ntoa(shard.ip), shard.port);
