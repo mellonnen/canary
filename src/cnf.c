@@ -7,6 +7,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/socket.h>
+#include <time.h>
 #include <unistd.h>
 
 #define CNFPORT 8080
@@ -15,17 +16,20 @@
 #define MAXSHARDS 100
 
 CanaryShardInfo shards[MAXSHARDS];
+int num_shards = 0;
 
 typedef struct sockaddr_in SA_IN;
 typedef struct sockaddr SA;
+typedef struct in_addr IA;
 
 void handle_args(int argc, char *argv);
 void run();
 
-void handle_connection(int client_socket);
-void handle_shard_registration(uint8_t *buf, uint32_t buf_size);
+void handle_connection(int client_socket, IA client_addr);
+void handle_shard_registration(int socket, uint8_t *payload, IA shard_addr);
 
 int main(int argc, char *argv[]) {
+  srandom(time(NULL));
   run();
   return 0;
 }
@@ -64,25 +68,39 @@ void run() {
 
     printf("IP of client is: %s\n", inet_ntoa(client_addr.sin_addr));
     printf("Port of client is: %d\n", ntohs(client_addr.sin_port));
-    handle_connection(client_socket);
+    handle_connection(client_socket, client_addr.sin_addr);
   }
 }
 
-void handle_connection(int client_socket) {
+void handle_connection(int socket, IA client_addr) {
   CanaryMsg msg;
 
-  if (receive_msg(client_socket, &msg) == -1) {
-    send_error_msg(client_socket, "Could not receive message");
+  if (receive_msg(socket, &msg) == -1) {
+    send_error_msg(socket, "Could not receive message");
   }
 
   switch (msg.type) {
   case RegisterShard2Cnf:
-    handle_shard_registration(msg.payload, msg.payload_len);
+    handle_shard_registration(socket, msg.payload, client_addr);
     break;
   default:
-    send_error_msg(client_socket, "Incorrect Canary message type");
+    send_error_msg(socket, "Incorrect Canary message type");
     break;
   }
 }
 
-void handle_shard_registration(uint8_t *buf, uint32_t buf_len){};
+void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
+  in_port_t port = 0;
+  if (num_shards > MAXSHARDS) {
+    printf("Could not register shard at %s:%d", inet_ntoa(addr), port);
+    send_error_msg(socket, "Reached max shard capacity");
+  }
+
+  unpack_register_payload(&port, payload);
+  CanaryShardInfo shard = {.id = random(), .ip = addr, .port = port};
+  shards[num_shards] = shard;
+  qsort(shards, num_shards, sizeof(CanaryShardInfo), compare_shards);
+  printf("Registered shard : {\n\tid: %ld,\n\tip: %s\n\tport: %d\n}\n",
+         shard.id, inet_ntoa(shard.ip), shard.port);
+  send_msg(socket, (CanaryMsg){.type = RegisterCnf2Mstr, .payload_len = 0});
+}

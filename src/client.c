@@ -14,7 +14,7 @@
 typedef struct sockaddr SA;
 
 int main(int argc, char *argv[]) {
-  int sockfd, n;
+  int sockfd;
   struct sockaddr_in servaddr;
 
   if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
