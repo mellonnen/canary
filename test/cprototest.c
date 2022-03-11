@@ -50,7 +50,7 @@ void test_payload_packing() {
   uint8_t register_buf[2];
   in_port_t port1 = 8080, port2;
 
-  printf("\t\tTest register payload packing/unpacking...");
+  printf("\t\tTest short  packing/unpacking...");
   pack_short(port1, register_buf);
   unpack_short(&port2, register_buf);
   assert(port1 == port2);
@@ -61,7 +61,7 @@ void test_payload_packing() {
   int value1 = 15, value2;
   uint8_t *put_buf = malloc(sizeof(key_len) + key_len + sizeof(value1));
 
-  printf("\t\tTest put payload packing/unpacking...");
+  printf("\t\tTest string-int packing/unpacking...");
   pack_string_int(key1, key_len, value1, put_buf);
   unpack_string_int(&key2, &value2, put_buf);
   assert(strcmp(key1, key2) == 0);
