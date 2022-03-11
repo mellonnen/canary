@@ -51,8 +51,8 @@ void test_payload_packing() {
   in_port_t port1 = 8080, port2;
 
   printf("\t\tTest register payload packing/unpacking...");
-  pack_register_payload(port1, register_buf);
-  unpack_register_payload(&port2, register_buf);
+  pack_short(port1, register_buf);
+  unpack_short(&port2, register_buf);
   assert(port1 == port2);
   printf("✅\n");
 
@@ -62,8 +62,8 @@ void test_payload_packing() {
   uint8_t *put_buf = malloc(sizeof(key_len) + key_len + sizeof(value1));
 
   printf("\t\tTest put payload packing/unpacking...");
-  pack_put_payload(key1, key_len, value1, put_buf);
-  unpack_put_payload(&key2, &value2, put_buf);
+  pack_string_int(key1, key_len, value1, put_buf);
+  unpack_string_int(&key2, &value2, put_buf);
   assert(strcmp(key1, key2) == 0);
   assert(value1 == value2);
   printf("✅\n");

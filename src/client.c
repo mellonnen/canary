@@ -41,7 +41,7 @@ int main(int argc, char *argv[]) {
   size_t payload_len = sizeof(key_len) + key_len + sizeof(value);
 
   uint8_t *payload = malloc(payload_len);
-  pack_put_payload(key, key_len, value, payload);
+  pack_string_int(key, key_len, value, payload);
 
   CanaryMsg msg = {
       .type = PutClient2Mstr, .payload_len = payload_len, .payload = payload};

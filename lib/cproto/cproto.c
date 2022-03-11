@@ -131,18 +131,18 @@ int deserialize(uint8_t *buf, CanaryMsg *msg) {
   return 0;
 }
 
-int pack_register_payload(in_port_t port, uint8_t buf[2]) {
+int pack_short(uint16_t port, uint8_t buf[2]) {
   in_port_t n_port = htons(port);
   memcpy(buf, &n_port, sizeof(n_port));
   return 0;
 }
 
-int unpack_register_payload(in_port_t *port, uint8_t *buf) {
+int unpack_short(uint16_t *port, uint8_t *buf) {
   *port = ntohs(*(in_port_t *)buf);
   return 0;
 }
 
-int pack_put_payload(char *key, uint32_t key_len, int value, uint8_t *buf) {
+int pack_string_int(char *key, uint32_t key_len, int value, uint8_t *buf) {
   int bytes_packed = 0;
 
   uint32_t n_key_len = htonl(key_len);
@@ -157,7 +157,7 @@ int pack_put_payload(char *key, uint32_t key_len, int value, uint8_t *buf) {
   return 0;
 }
 
-int unpack_put_payload(char **key, int *value, uint8_t *buf) {
+int unpack_string_int(char **key, int *value, uint8_t *buf) {
   int bytes_unpacked = 0;
 
   uint32_t key_len;

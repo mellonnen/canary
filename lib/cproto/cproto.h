@@ -49,10 +49,11 @@ typedef struct {
 
 int serialize(CanaryMsg, uint8_t **);
 int deserialize(uint8_t *, CanaryMsg *);
-int pack_register_payload(in_port_t, uint8_t[2]);
-int unpack_register_payload(in_port_t *, uint8_t *);
-int pack_put_payload(char *, uint32_t, int, uint8_t *);
-int unpack_put_payload(char **, int *, uint8_t *);
+
+int pack_short(uint16_t, uint8_t[2]);
+int unpack_short(uint16_t *, uint8_t *);
+int pack_string_int(char *, uint32_t, int, uint8_t *);
+int unpack_string_int(char **, int *, uint8_t *);
 
 int receive_msg(int, CanaryMsg *);
 int send_msg(int, CanaryMsg);

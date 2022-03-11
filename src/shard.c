@@ -61,7 +61,7 @@ int register_with_cnf(char *cnf_ip, in_port_t shard_port) {
     return -1;
   }
   uint8_t payload[2];
-  pack_register_payload(shard_port, payload);
+  pack_short(shard_port, payload);
 
   send_msg(sockfd, (CanaryMsg){.type = RegisterShard2Cnf,
                                .payload_len = 2,
@@ -144,7 +144,7 @@ void handle_put(uint8_t *payload) {
   char *key;
   int value;
 
-  unpack_put_payload(&key, &value, payload);
+  unpack_string_int(&key, &value, payload);
   lru_entry_t *removed = put(cache, key, value);
 
   printf("Put key value pair (%s, %d) ", key, value);

@@ -94,7 +94,7 @@ void handle_connection(int socket, IA client_addr) {
 
 void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
   in_port_t port;
-  unpack_register_payload(&port, payload);
+  unpack_short(&port, payload);
   if (num_shards >= MAXSHARDS) {
     printf("Could not register shard at %s:%d\n", inet_ntoa(addr), port);
     send_error_msg(socket, "Reached max shard capacity");
