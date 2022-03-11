@@ -5,15 +5,14 @@
 
 void test_put() {
   lru_cache_t *cache = create_lru_cache(3);
-
-  bool ok;
+  lru_entry_t *removed;
   printf("\t\ttest initial put...");
-  ok = put(cache, "limp", 1);
-  assert(ok);
-  ok = put(cache, "limpz", 2);
-  assert(ok);
-  ok = put(cache, "limpan", 2);
-  assert(ok);
+  removed = put(cache, "limp", 1);
+  assert(removed == NULL);
+  removed = put(cache, "limpz", 2);
+  assert(removed == NULL);
+  removed = put(cache, "limpan", 2);
+  assert(removed == NULL);
   printf("✅\n");
 
   printf("\t\ttest num elements...");
@@ -36,33 +35,35 @@ void test_put() {
   printf("✅\n");
 
   printf("\t\ttest updating head value...");
-  ok = put(cache, "limpan", 3);
-  assert(ok);
+  removed = put(cache, "limpan", 3);
+  assert(removed == NULL);
   assert(strcmp(cache->head->key, "limpan") == 0);
   assert(cache->head->value == 3);
   printf("✅\n");
 
   printf("\t\ttest updating entry in middle of LRU queue...");
-  ok = put(cache, "limp", 3);
-  assert(ok);
+  removed = put(cache, "limp", 3);
+  assert(removed == NULL);
   assert(strcmp(cache->head->key, "limp") == 0);
   assert(cache->head->value == 3);
   printf("✅\n");
 
   printf("\t\test updating tail entry...");
-  ok = put(cache, "limpz", 3);
-  assert(ok);
+  removed = put(cache, "limpz", 3);
+  assert(removed == NULL);
   assert(strcmp(cache->head->key, "limpz") == 0);
   assert(cache->head->value == 3);
   printf("✅\n");
 
   printf("\t\ttest inserting into full cache...");
-  ok = put(cache, "limpzy", 3);
-  assert(ok);
+  removed = put(cache, "limpzy", 3);
+  assert(removed != NULL);
+  assert(strcmp(removed->key, "limpan") == 0);
   assert(strcmp(cache->head->key, "limpzy") == 0);
   assert(strcmp(cache->tail->key, "limp") == 0);
   printf("✅\n");
 
+  destroy_entry(removed);
   destroy_lru_cache(cache);
 }
 

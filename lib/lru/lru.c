@@ -16,12 +16,6 @@ lru_entry_t *create_entry(char *key, int value) {
   return entry;
 }
 
-// helper that frees memory of an entry.
-void destroy_entry(lru_entry_t *entry) {
-  free(entry->key);
-  free(entry);
-}
-
 // helper that employs the LRU protocol, by:
 // - Disconnecting tail entry from its potential bucket.
 // - Disconnecting tail entry from LRU queue and set tail pointer.
@@ -121,6 +115,16 @@ void destroy_lru_cache(lru_cache_t *cache) {
 }
 
 /**
+ * @brief Frees memory of an LRU entry.
+ *
+ * @param entry - lru_entry_t
+ */
+void destroy_entry(lru_entry_t *entry) {
+  free(entry->key);
+  free(entry);
+}
+
+/**
  * @brief Will fetch (if found) the value cached to the given key.
  *
  * @param cache
@@ -149,22 +153,22 @@ int *get(lru_cache_t *cache, char *key) {
  * its value will be updated. NOTE: if the cache is full the least recently used
  * item will be removed.
  *
- * @param cache
- * @param key
- * @param value
+ * @param cache - lru_cache_t *
+ * @param key - char *
+ * @param value - int
+ * @returns A pointer to lru_entry_t removed by LRU protocol, NULL means no
+ * element was removed.
  */
-bool put(lru_cache_t *cache, char *key, int value) {
+lru_entry_t *put(lru_cache_t *cache, char *key, int value) {
 
   size_t slot = hash_djb2(key) % cache->capacity;
 
-  lru_entry_t *entry = cache->entries[slot];
+  lru_entry_t *entry = cache->entries[slot], *remove = NULL;
 
   // case for empty slot.
   if (entry == NULL) {
-
     if (cache->num_elements == cache->capacity) {
-      // do LRU protocol and free the returned pointer.
-      destroy_entry(do_lru(cache));
+      remove = do_lru(cache);
     }
 
     entry = create_entry(key, value);
@@ -184,7 +188,7 @@ bool put(lru_cache_t *cache, char *key, int value) {
     // insert into slot.
     cache->entries[slot] = entry;
     cache->num_elements++;
-    return true;
+    return remove;
   }
 
   // Hash collision, linear scan the bucket.
@@ -194,7 +198,7 @@ bool put(lru_cache_t *cache, char *key, int value) {
     if (strcmp(entry->key, key) == 0) {
       entry->value = value;
       move_entry_to_head(cache, entry);
-      return true;
+      return NULL;
     }
     prev = entry;
     entry = prev->bucket_next;
@@ -202,7 +206,6 @@ bool put(lru_cache_t *cache, char *key, int value) {
 
   // add new entry to the bucket.
 
-  lru_entry_t *remove = NULL;
   // Free space for item if filled to capacity.
   if (cache->num_elements == cache->capacity) {
     remove = do_lru(cache); // do not free pointer immediately.
@@ -223,14 +226,10 @@ bool put(lru_cache_t *cache, char *key, int value) {
     prev->bucket_next = entry;
   }
 
-  // free removed entry;
-  if (remove != NULL)
-    destroy_entry(remove);
-
   // Insert element at head of LRU ddl.
   cache->head->lru_prev = entry;
   entry->lru_next = cache->head;
   cache->head = entry;
   cache->num_elements++;
-  return true;
+  return remove;
 }
