@@ -1,4 +1,4 @@
-#include "lru.h"
+#include "../lib/lru/lru.h"
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>

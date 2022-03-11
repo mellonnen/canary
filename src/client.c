@@ -1,4 +1,4 @@
-#include "cproto.h"
+#include "../lib/cproto/cproto.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>

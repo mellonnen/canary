@@ -1,4 +1,4 @@
-#include "cproto.h"
+#include "../lib/cproto/cproto.h"
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>

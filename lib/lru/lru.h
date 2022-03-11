@@ -1,6 +1,7 @@
 #ifndef __LRU_H__
 #define __LRU_H__
 
+#include "../hashing/hashing.h"
 #include <stdbool.h>
 #include <stddef.h>
 typedef struct lru_entry_t {

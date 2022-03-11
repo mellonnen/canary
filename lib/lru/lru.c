@@ -1,5 +1,4 @@
 #include "lru.h"
-#include "hashing.h"
 #include <stdlib.h>
 #include <string.h>
 

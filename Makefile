@@ -1,47 +1,63 @@
+# ------------- VARIABLES ----------------
+
+# Complier stuff
 CC=gcc
 CFLAGS=-g -Wall
 
+# directories
 SRCDIR=src
+LIBDIR=lib
 OBJDIR=obj
-TESTDIR=test
 BINDIR=bin
+TESTDIR=test
 
-CLIENT=$(BINDIR)/client
-SHARD=$(BINDIR)/shard
-CNF=$(BINDIR)/cnf
 
-LRUTEST=$(TESTDIR)/lrutest
-CPROTOTEST=$(TESTDIR)/cprototest
-
+# Map source code files to binaries
 SRCS=$(wildcard $(SRCDIR)/*.c)
-BINS=$(CLIENT) $(SHARD) $(CNF)
-TESTS=$(LRUTEST) $(CPROTOTEST)
+BINS=$(patsubst $(SRCDIR)/%.c, $(BINDIR)/%, $(SRCS))
+
+# Map library source code files to .o files
+LIBS=$(wildcard $(LIBDIR)/**/*.c)
+OBJS=$(addprefix $(OBJDIR)/,$(notdir $(patsubst $(LIBDIR)/%.c, $(LIBDIR)/%.o, $(LIBS))))
+
+# Map test source code files to test binaries
+TESTS=$(wildcard $(TESTDIR)/*.c)
+TESTBINS=$(patsubst $(TESTDIR)/%.c, $(TESTDIR)/bin/%, $(TESTS))
 
 
-all:$(BINS)
+# ------------- TARGETS -------------------
 
+all: $(BINDIR) $(OBJDIR) $(BINS)
+
+# Compile binaries.
+$(BINS):$(BINDIR)/%: $(SRCDIR)/%.c $(OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
+
+# Compile library object files.
+.SECONDEXPANSION:
+$(OBJS):$(OBJDIR)/%.o: $(LIBDIR)/$$*/$$*.c
+	$(CC) $(CFLAGS) -c $< -o $@
+
+# Compile test binaries.
+$(TESTBINS):$(TESTDIR)/bin/%: $(TESTDIR)/%.c $(OBJS)
+	$(CC) $(CFLAGS) $^ -o $@
+
+
+# Create ignored directories if does not exist.
+$(BINDIR) $(OBJDIR) $(TESTDIR)/bin:
+	mkdir $@
+
+# ------------- COMMANDS -------------------
+
+# Compile without debug flags and with optimizations.
 release: CFLAGS=-Wall -O2 -DNDEBUG
 release: clean
 release: $(BINS)
 
-$(CLIENT): $(OBJDIR)/client.o
-$(CNF): $(OBJDIR)/cnf.o
-$(SHARD): $(OBJDIR)/cnf.o $(OBJDIR)/lru.o $(OBJDIR)/hashing.o
+# Run tests.
+test: $(TESTDIR)/bin $(OBJDIR) $(TESTBINS) 
+	run-parts $(TESTDIR)/bin
 
-$(BINS): $(OBJDIR)/cproto.o
-	$(CC) $(CFLAGS) $^ -o $@
-
-$(OBJDIR)/%.o: $(SRCDIR)/%.c
-	$(CC) $(CFLAGS) -c $< -o $@
-
-$(LRUTEST): $(OBJDIR)/lrutest.o $(OBJDIR)/lru.o $(OBJDIR)/hashing.o
-$(CPROTOTEST): $(OBJDIR)/cprototest.o $(OBJDIR)/cproto.o
-
-$(LRUTEST) $(CPROTOTEST):
-	$(CC) $(CFLAGS) $^ -o $@
-
-test: $(TESTS)
-	run-parts $(TESTDIR)
-
+# Clean up object files and binaries.
 clean:
-	$(RM) -r $(BINDIR)/*  $(OBJDIR)/* $(TESTDIR)/*
+	$(RM) -r $(BINDIR)/*  $(OBJDIR)/* $(TESTDIR)/bin/*

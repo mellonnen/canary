@@ -1,7 +1,3 @@
-*
-!*/
-!*.*
-
-!Makefile
-
-*.o
+/bin
+/obj
+/test/bin
