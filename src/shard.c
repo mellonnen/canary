@@ -23,6 +23,7 @@ int register_with_cnf(char *cnf_ip, in_port_t shard_port);
 int run(in_port_t shard_port);
 void handle_connection(int client_socket, IA client_addr);
 void handle_put(uint8_t *payload);
+void handle_get(int socket, uint8_t *payload);
 
 int main(int argc, char *argv[]) {
   if (argc < 4) {
@@ -134,6 +135,9 @@ void handle_connection(int socket, IA client_addr) {
   case PutClient2Mstr:
     handle_put(msg.payload);
     break;
+  case GetClient2Shard:
+    handle_get(socket, msg.payload);
+    break;
   default:
     send_error_msg(socket, "Incorrect Canary message type");
     break;
@@ -154,4 +158,23 @@ void handle_put(uint8_t *payload) {
   } else {
     printf("in cache\n");
   }
+}
+
+void handle_get(int socket, uint8_t *payload) {
+  CanaryMsg msg = {.type = GetShard2Client};
+
+  char *key = (char *)payload;
+
+  printf("Client request value for key %s\n", key);
+  int *value = get(cache, key);
+
+  if (value == NULL) {
+    printf("No value found\n\n");
+    msg.payload_len = 0;
+  } else {
+    printf("Found value %d\n\n", *value);
+    msg.payload_len = sizeof(int);
+    msg.payload = (uint8_t *)value;
+  }
+  send_msg(socket, msg);
 }
