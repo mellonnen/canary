@@ -1,5 +1,6 @@
 #include "../lib/cproto/cproto.h"
 #include "../lib/lru//lru.h"
+#include "../lib/nethelpers/nethelpers.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -12,10 +13,6 @@
 
 #define CNFPORT 8080
 #define BACKLOG 100
-
-typedef struct sockaddr_in SA_IN;
-typedef struct sockaddr SA;
-typedef struct in_addr IA;
 
 lru_cache_t *cache;
 
@@ -39,37 +36,17 @@ int main(int argc, char *argv[]) {
     exit(EXIT_FAILURE);
 }
 
-int register_with_cnf(char *cnf_ip, in_port_t shard_port) {
-  int sockfd;
-  struct sockaddr_in servaddr;
+int register_with_cnf(char *cnf_addr, in_port_t shard_port) {
 
-  if ((sockfd = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    printf("Error when creating socket: %s\n", strerror(errno));
-    return -1;
-  }
+  int cnf_socket = connect_to_socket(cnf_addr, CNFPORT);
 
-  bzero(&servaddr, sizeof(servaddr));
-  servaddr.sin_family = AF_INET;
-  servaddr.sin_port = htons(CNFPORT);
-
-  if (inet_pton(AF_INET, cnf_ip, &servaddr.sin_addr) < 0) {
-    printf("Error converting string IP to bytes: %s\n", strerror(errno));
-    return -1;
-  }
-
-  if (connect(sockfd, (SA *)&servaddr, sizeof(servaddr)) < 0) {
-    printf("Error connecting to cnf: %s\n", strerror(errno));
-    return -1;
-  }
   uint8_t payload[2];
   pack_short(shard_port, payload);
-
-  send_msg(sockfd, (CanaryMsg){.type = RegisterShard2Cnf,
-                               .payload_len = 2,
-                               .payload = payload});
+  send_msg(cnf_socket, (CanaryMsg){.type = RegisterShard2Cnf,
+                                   .payload_len = 2,
+                                   .payload = payload});
   CanaryMsg msg;
-
-  receive_msg(sockfd, &msg);
+  receive_msg(cnf_socket, &msg);
 
   switch (msg.type) {
   case RegisterCnf2Mstr:
@@ -86,25 +63,9 @@ int register_with_cnf(char *cnf_ip, in_port_t shard_port) {
 
 int run(in_port_t shard_port) {
   int shard_socket, client_socket, addr_size;
-  SA_IN shard_addr, client_addr;
+  SA_IN client_addr;
 
-  if ((shard_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    printf("Error creating socket: %s\n", strerror(errno));
-    return -1;
-  }
-
-  shard_addr.sin_family = AF_INET;
-  shard_addr.sin_addr.s_addr = INADDR_ANY;
-  shard_addr.sin_port = htons(shard_port);
-
-  if ((bind(shard_socket, (SA *)&shard_addr, sizeof(shard_addr))) < 0) {
-    printf("Error binding socket: %s\n", strerror(errno));
-    return -1;
-  }
-  if ((listen(shard_socket, BACKLOG)) == -1) {
-    printf("Error during listen\n");
-    exit(EXIT_FAILURE);
-  }
+  shard_socket = bind_n_listen_socket(shard_port, BACKLOG);
 
   while (1) {
     printf("Waiting for connections...\n\n");

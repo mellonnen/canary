@@ -1,5 +1,6 @@
 #include "../lib/cproto/cproto.h"
 #include "../lib/hashing//hashing.h"
+#include "../lib/nethelpers/nethelpers.h"
 #include <arpa/inet.h>
 #include <errno.h>
 #include <netinet/in.h>
@@ -20,11 +21,6 @@
 CanaryShardInfo shards[MAXSHARDS];
 int num_shards = 0;
 
-typedef struct sockaddr_in SA_IN;
-typedef struct sockaddr SA;
-typedef struct in_addr IA;
-
-void handle_args(int argc, char *argv);
 int run();
 
 void handle_connection(int client_socket, IA client_addr);
@@ -41,25 +37,9 @@ int main(int argc, char *argv[]) {
 
 int run() {
   int server_socket, client_socket, addr_size;
-  SA_IN server_addr, client_addr;
+  SA_IN client_addr;
 
-  if ((server_socket = socket(AF_INET, SOCK_STREAM, 0)) < 0) {
-    printf("Error creating socket: %s\n", strerror(errno));
-    return -1;
-  }
-
-  server_addr.sin_family = AF_INET;
-  server_addr.sin_addr.s_addr = INADDR_ANY;
-  server_addr.sin_port = htons(CNFPORT);
-
-  if ((bind(server_socket, (SA *)&server_addr, sizeof(server_addr))) < 0) {
-    printf("Error binding socket: %s\n", strerror(errno));
-    return -1;
-  }
-  if ((listen(server_socket, BACKLOG)) == -1) {
-    printf("Error during listen\n");
-    exit(EXIT_FAILURE);
-  }
+  server_socket = bind_n_listen_socket(CNFPORT, BACKLOG);
 
   while (1) {
     printf("Waiting for connections...\n\n");
