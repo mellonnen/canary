@@ -44,14 +44,14 @@ void canary_put(CanaryCache *cache, char *key, int value) {
 int get_shard(int socket, char *key, char **addr, in_port_t *port) {
   CanaryMsg req, resp;
 
-  req = (CanaryMsg){.type = ShardInfoClient2Cnf,
+  req = (CanaryMsg){.type = Client2CnfDiscover,
                     .payload_len = strlen(key),
                     .payload = (uint8_t *)key};
 
   send_msg(socket, req);
   receive_msg(socket, &resp);
 
-  if (resp.type != ShardInfoCnf2Client)
+  if (resp.type != Cnf2ClientDiscover)
     return -1;
 
   unpack_string_short(addr, port, resp.payload);
@@ -62,14 +62,14 @@ int *get_from_shard(int socket, char *key) {
   CanaryMsg req, resp;
 
   uint32_t payload_len = strlen(key);
-  req = (CanaryMsg){.type = GetClient2Shard,
+  req = (CanaryMsg){.type = Client2ShardGet,
                     .payload_len = payload_len,
                     .payload = (uint8_t *)key};
 
   send_msg(socket, req);
   receive_msg(socket, &resp);
 
-  if (resp.type != GetShard2Client)
+  if (resp.type != Shard2ClientGet)
     return NULL;
 
   if (resp.payload_len == 0)
@@ -85,7 +85,7 @@ void put_in_shard(int socket, char *key, int value) {
   pack_string_int(key, key_len, value, payload);
 
   CanaryMsg msg = {
-      .type = PutClient2Mstr, .payload_len = payload_len, .payload = payload};
+      .type = Client2MstrPut, .payload_len = payload_len, .payload = payload};
 
   send_msg(socket, msg);
   free(payload);

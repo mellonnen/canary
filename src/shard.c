@@ -42,14 +42,14 @@ int register_with_cnf(char *cnf_addr, in_port_t shard_port) {
 
   uint8_t payload[2];
   pack_short(shard_port, payload);
-  send_msg(cnf_socket, (CanaryMsg){.type = RegisterShard2Cnf,
+  send_msg(cnf_socket, (CanaryMsg){.type = Mstr2CnfRegister,
                                    .payload_len = 2,
                                    .payload = payload});
   CanaryMsg msg;
   receive_msg(cnf_socket, &msg);
 
   switch (msg.type) {
-  case RegisterCnf2Mstr:
+  case Cnf2MstrRegister:
     printf("Successfully registered shard.\n");
     return 0;
   case Error:
@@ -93,10 +93,10 @@ void handle_connection(int socket, IA client_addr) {
   }
 
   switch (msg.type) {
-  case PutClient2Mstr:
+  case Client2MstrPut:
     handle_put(msg.payload);
     break;
-  case GetClient2Shard:
+  case Client2ShardGet:
     handle_get(socket, msg.payload);
     break;
   default:
@@ -122,7 +122,7 @@ void handle_put(uint8_t *payload) {
 }
 
 void handle_get(int socket, uint8_t *payload) {
-  CanaryMsg msg = {.type = GetShard2Client};
+  CanaryMsg msg = {.type = Shard2ClientGet};
 
   char *key = (char *)payload;
 

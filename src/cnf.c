@@ -129,10 +129,10 @@ void handle_connection(conn_ctx_t *ctx) {
   }
 
   switch (msg.type) {
-  case RegisterShard2Cnf:
+  case Mstr2CnfRegister:
     handle_shard_registration(socket, msg.payload, client_addr);
     break;
-  case ShardInfoClient2Cnf:
+  case Client2CnfDiscover:
     handle_shard_selection(socket, msg.payload);
     break;
   default:
@@ -155,7 +155,7 @@ void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
   qsort(shards, num_shards, sizeof(CanaryShardInfo), compare_shards);
   printf("Registered shard : {\n\tid: %lu,\n\tip: %s\n\tport: %d\n}\n",
          shard.id, inet_ntoa(shard.ip), shard.port);
-  send_msg(socket, (CanaryMsg){.type = RegisterCnf2Mstr, .payload_len = 0});
+  send_msg(socket, (CanaryMsg){.type = Cnf2MstrRegister, .payload_len = 0});
 }
 
 void handle_shard_selection(int socket, uint8_t *payload) {
@@ -188,7 +188,7 @@ void handle_shard_selection(int socket, uint8_t *payload) {
   pack_string_short(ip_str, ip_len, port, buf);
 
   CanaryMsg msg = {
-      .type = ShardInfoCnf2Client, .payload_len = buf_len, .payload = buf};
+      .type = Cnf2ClientDiscover, .payload_len = buf_len, .payload = buf};
 
   printf("hash = %lu\n", hash);
   printf("Shard ids:\n");
