@@ -3,6 +3,7 @@
 # Complier stuff
 CC=gcc
 CFLAGS=-g -Wall
+LDFLAGS=-lpthread
 
 # directories
 SRCDIR=src
@@ -31,12 +32,12 @@ all: $(BINDIR) $(OBJDIR) $(BINS)
 
 # Compile binaries.
 $(BINS):$(BINDIR)/%: $(SRCDIR)/%.c $(OBJS)
-	$(CC) $(CFLAGS) $^ -o $@
+	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Compile library object files.
 .SECONDEXPANSION:
 $(OBJS):$(OBJDIR)/%.o: $(LIBDIR)/$$*/$$*.c
-	$(CC) $(CFLAGS) -c $< -o $@
+	$(CC) $(CFLAGS) -c $< -o $@ 
 
 # Compile test binaries.
 $(TESTBINS):$(TESTDIR)/bin/%: $(TESTDIR)/%.c $(OBJS)

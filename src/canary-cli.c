@@ -8,8 +8,6 @@
 #define DEFAULT_CNF_PORT 8080
 #define DEFAULT_CNF_ADDR "127.0.0.1"
 
-#define RL_BUFSIZE 1024
-
 CanaryCache cache;
 
 void run_shell();
