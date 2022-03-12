@@ -1,8 +1,10 @@
-#include "queue.h"
+#include "connq.h"
 
-queue_t create_queue() { return (queue_t){.head = NULL, .tail = NULL}; }
+conn_queue_t create_queue() {
+  return (conn_queue_t){.head = NULL, .tail = NULL};
+}
 
-void destroy_queue(queue_t *q) {
+void destroy_queue(conn_queue_t *q) {
   if (q->head == NULL)
     return;
 
@@ -14,9 +16,9 @@ void destroy_queue(queue_t *q) {
   } while (curr != NULL);
 }
 
-void enqueue(queue_t *q, int *client_socket) {
+void enqueue(conn_queue_t *q, conn_ctx_t *ctx) {
   node_t *new_node = malloc(sizeof(node_t));
-  new_node->client_socket = client_socket;
+  new_node->ctx = ctx;
   new_node->next = NULL;
   if (q->tail == NULL) {
     q->head = new_node;
@@ -26,15 +28,15 @@ void enqueue(queue_t *q, int *client_socket) {
   q->tail = new_node;
 }
 
-int *dequeue(queue_t *q) {
+conn_ctx_t *dequeue(conn_queue_t *q) {
   if (q->head == NULL)
     return NULL;
 
-  int *res = q->head->client_socket;
+  conn_ctx_t *ctx = q->head->ctx;
   node_t *temp = q->head;
   q->head = q->head->next;
   if (q->head == NULL)
     q->tail = NULL;
   free(temp);
-  return res;
+  return ctx;
 }
