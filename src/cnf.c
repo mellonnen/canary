@@ -15,7 +15,7 @@
 #define CNFPORT 8080
 #define BACKLOG 100
 
-#define MAXSHARDS 2
+#define MAXSHARDS 100
 
 CanaryShardInfo shards[MAXSHARDS];
 int num_shards = 0;
@@ -32,7 +32,7 @@ void handle_shard_registration(int socket, uint8_t *payload, IA shard_addr);
 void handle_shard_selection(int socket, uint8_t *payload);
 
 int main(int argc, char *argv[]) {
-  srandom(time(NULL));
+  srand(time(NULL));
   if (run() == -1)
     exit(EXIT_FAILURE);
 
@@ -106,13 +106,11 @@ void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
     send_error_msg(socket, "Reached max shard capacity");
     return;
   }
-  // TODO: look here to generate larger integers
-  // https://stackoverflow.com/questions/33010010/how-to-generate-random-64-bit-unsigned-integer-in-c
-  CanaryShardInfo shard = {.id = random(), .ip = addr, .port = port};
+  CanaryShardInfo shard = {.id = rand64(), .ip = addr, .port = port};
   shards[num_shards] = shard;
   num_shards++;
   qsort(shards, num_shards, sizeof(CanaryShardInfo), compare_shards);
-  printf("Registered shard : {\n\tid: %ld,\n\tip: %s\n\tport: %d\n}\n",
+  printf("Registered shard : {\n\tid: %lu,\n\tip: %s\n\tport: %d\n}\n",
          shard.id, inet_ntoa(shard.ip), shard.port);
   send_msg(socket, (CanaryMsg){.type = RegisterCnf2Mstr, .payload_len = 0});
 }
@@ -120,8 +118,7 @@ void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
 void handle_shard_selection(int socket, uint8_t *payload) {
   // cast payload to string and hash it.
   char *key = (char *)payload;
-  // NOTE: we do mod because RAND_MAX <= INT_MAX
-  size_t hash = hash_djb2(key) % RAND_MAX;
+  size_t hash = hash_djb2(key);
 
   // Binary search to find the first shard.id > hash.
   int start = 0, end = num_shards, middle;
@@ -149,6 +146,15 @@ void handle_shard_selection(int socket, uint8_t *payload) {
 
   CanaryMsg msg = {
       .type = ShardInfoCnf2Client, .payload_len = buf_len, .payload = buf};
+
+  printf("hash = %lu\n", hash);
+  printf("Shard ids:\n");
+  for (int i = 0; i < num_shards; i++) {
+    printf("{id=%lu, port=%d}", shards[i].id, shards[i].port);
+    if (i < num_shards - 1)
+      printf(" -> ");
+  }
+  printf("\n");
 
   send_msg(socket, msg);
   printf(

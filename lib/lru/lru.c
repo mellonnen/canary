@@ -36,7 +36,7 @@ lru_entry_t *do_lru(lru_cache_t *cache) {
 
   // Remove element from bucket
   if (remove->bucket_prev == NULL && remove->bucket_prev == NULL) {
-    size_t slot = hash_djb2(remove->key) % cache->capacity;
+    unsigned long slot = hash_djb2(remove->key) % cache->capacity;
     cache->entries[slot] = NULL;
   }
 
@@ -146,7 +146,7 @@ void destroy_entry(lru_entry_t *entry) {
  * @return pointer to the value, NULL means the value is not in the cache.
  */
 int *get(lru_cache_t *cache, char *key) {
-  size_t slot = hash_djb2(key) % cache->capacity;
+  unsigned long slot = hash_djb2(key) % cache->capacity;
 
   lru_entry_t *entry = cache->entries[slot];
 
