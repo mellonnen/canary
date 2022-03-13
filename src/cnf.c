@@ -22,11 +22,12 @@
 #define MAXSHARDS 100
 #define MAXTHREADS 10
 #define HEARTBEAT_INTERVAL_WITH_SLACK 15
+#define SHARD_MAITNENANCE_INTERVAL 20
 
 CanaryShardInfo shards[MAXSHARDS];
 pthread_rwlock_t shards_lock;
 
-pthread_t thread_pool[MAXTHREADS];
+pthread_t thread_pool[MAXTHREADS], shard_maitnenance;
 
 conn_queue_t conn_q;
 pthread_cond_t conn_q_cond;
@@ -36,6 +37,7 @@ int num_shards = 0;
 
 int run(in_port_t port);
 void *worker_thread(void *arg);
+void *shard_maintenance_thread(void *arg);
 void handle_connection(conn_ctx_t *ctx);
 void handle_shard_registration(int socket, uint8_t *payload, IA shard_addr);
 void handle_shard_selection(int socket, uint8_t *payload);
@@ -62,6 +64,7 @@ int main(int argc, char *argv[]) {
       exit(EXIT_FAILURE);
     }
   }
+  pthread_create(&shard_maitnenance, NULL, shard_maintenance_thread, NULL);
   for (long i = 0; i < num_threads; i++) {
     pthread_create(&thread_pool[i], NULL, worker_thread, (void *)i);
   }
@@ -120,6 +123,31 @@ void *worker_thread(void *arg) {
            inet_ntoa(ctx->client_addr), ctx->port);
 
     handle_connection(ctx);
+  }
+}
+
+void *shard_maintenance_thread(void *arg) {
+  while (1) {
+    sleep(SHARD_MAITNENANCE_INTERVAL);
+    // BEGIN CRITICAL SECTION
+    pthread_rwlock_wrlock(&shards_lock);
+    if (num_shards > 0) {
+      // Scan through the shards and mark expired shards.
+      int num_expired = 0;
+      for (int i = 0; i < num_shards; i++) {
+        if (shards[i].expiration < time(NULL)) {
+          shards[i].expired = true;
+          num_expired++;
+          printf("Shard at %s:%d has expired\n", inet_ntoa(shards[i].ip),
+                 shards[i].port);
+        }
+        // Re-sort shards (expired will be put at the back).
+        qsort(shards, num_shards, sizeof(CanaryShardInfo), compare_shards);
+        num_shards -= num_expired;
+      }
+    }
+    pthread_rwlock_unlock(&shards_lock);
+    // END CRITICAL SECTION
   }
 }
 
@@ -225,7 +253,7 @@ void handle_shard_selection(int socket, uint8_t *payload) {
 void handle_shard_heartbeat(uint8_t *payload) {
   uint32_t id = ntohl(*(uint32_t *)payload);
   // BEGIN CRITICAL SECTION
-  pthread_rwlock_unlock(&shards_lock);
+  pthread_rwlock_wrlock(&shards_lock);
   int start = 0, end = num_shards - 1;
   while (start <= end) {
     int middle = start + (end - start) / 2;
