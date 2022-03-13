@@ -42,14 +42,6 @@ typedef struct {
   uint8_t *payload;
 } CanaryMsg;
 
-typedef struct {
-  uint32_t id;
-  struct in_addr ip;
-  in_port_t port;
-  time_t expiration;
-  bool expired;
-} CanaryShardInfo;
-
 int serialize(CanaryMsg, uint8_t **);
 int deserialize(uint8_t *, CanaryMsg *);
 

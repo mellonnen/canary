@@ -19,21 +19,45 @@
 #define DEFAULT_CNF_PORT 8080
 #define BACKLOG 100
 
-#define MAXSHARDS 100
+#define MAX_MASTER_SHARDS 100
+#define MAX_FLWR_PER_MASTER 2
+
 #define MAXTHREADS 10
 #define HEARTBEAT_INTERVAL_WITH_SLACK 15
 #define SHARD_MAITNENANCE_INTERVAL 20
 
-CanaryShardInfo shards[MAXSHARDS];
+typedef struct {
+  IA addr;
+  in_port_t port;
+} shard_t;
+
+typedef struct {
+  shard_t shard;
+  time_t expiration;
+  bool expired;
+} follower_shard_t;
+
+typedef struct {
+  uint32_t id;
+  shard_t shard;
+  time_t expiration;
+  bool expired;
+  int num_flwr;
+  follower_shard_t *flwrs[MAX_FLWR_PER_MASTER];
+} master_shard_t;
+
+master_shard_t mstr_shards[MAX_MASTER_SHARDS];
 pthread_rwlock_t shards_lock;
+
+int num_shards = 0;
+int max_shards = MAX_MASTER_SHARDS;
+int flwr_per_master = MAX_FLWR_PER_MASTER;
 
 pthread_t thread_pool[MAXTHREADS], shard_maitnenance;
 
 conn_queue_t conn_q;
 pthread_cond_t conn_q_cond;
 pthread_mutex_t conn_q_lock;
-
-int num_shards = 0;
 
 int run(in_port_t port);
 void *worker_thread(void *arg);
@@ -135,14 +159,15 @@ void *shard_maintenance_thread(void *arg) {
       // Scan through the shards and mark expired shards.
       int num_expired = 0;
       for (int i = 0; i < num_shards; i++) {
-        if (shards[i].expiration < time(NULL)) {
-          shards[i].expired = true;
+        if (mstr_shards[i].expiration < time(NULL)) {
+          mstr_shards[i].expired = true;
           num_expired++;
-          printf("Shard at %s:%d has expired\n", inet_ntoa(shards[i].ip),
-                 shards[i].port);
+          printf("Shard at %s:%d has expired\n",
+                 inet_ntoa(mstr_shards[i].shard.addr),
+                 mstr_shards[i].shard.port);
         }
         // Re-sort shards (expired will be put at the back).
-        qsort(shards, num_shards, sizeof(CanaryShardInfo), compare_shards);
+        qsort(mstr_shards, num_shards, sizeof(master_shard_t), compare_shards);
         num_shards -= num_expired;
       }
     }
@@ -183,28 +208,27 @@ void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
   in_port_t port;
   unpack_short(&port, payload);
   uint32_t id = rand();
-  CanaryShardInfo shard = {.id = id,
-                           .ip = addr,
-                           .port = port,
-                           .expiration =
-                               time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK,
-                           .expired = false};
+  master_shard_t shard = {.id = id,
+                          .shard = {.addr = addr, .port = port},
+                          .expiration =
+                              time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK,
+                          .expired = false};
 
   // CRITICAL SECTION BEGIN
   pthread_rwlock_rdlock(&shards_lock);
-  if (num_shards >= MAXSHARDS) {
+  if (num_shards >= MAX_MASTER_SHARDS) {
     printf("Could not register shard at %s:%d\n", inet_ntoa(addr), port);
     send_error_msg(socket, "Reached max shard capacity");
     return;
   }
-  shards[num_shards] = shard;
+  mstr_shards[num_shards] = shard;
   num_shards++;
-  qsort(shards, num_shards, sizeof(CanaryShardInfo), compare_shards);
+  qsort(mstr_shards, num_shards, sizeof(master_shard_t), compare_shards);
   pthread_rwlock_unlock(&shards_lock);
   // CRITICAL SECTION END
 
   printf("Registered shard : {\n\tid: %d,\n\tip: %s\n\tport: %d\n}\n", shard.id,
-         inet_ntoa(shard.ip), shard.port);
+         inet_ntoa(shard.shard.addr), shard.shard.port);
 
   uint32_t n_id = htonl(id);
   send_msg(socket, (CanaryMsg){.type = Cnf2MstrRegister,
@@ -222,7 +246,7 @@ void handle_shard_selection(int socket, uint8_t *payload) {
   while (start <= end) {
     middle = start + (end - start) / 2;
 
-    if (shards[middle].id <= hash) {
+    if (mstr_shards[middle].id <= hash) {
       start = middle + 1;
     } else {
       end = middle - 1;
@@ -233,8 +257,8 @@ void handle_shard_selection(int socket, uint8_t *payload) {
   int idx = start > num_shards ? 0 : start;
 
   // Pack the payload and send the message to client.
-  char *ip_str = inet_ntoa(shards[idx].ip);
-  in_port_t port = shards[idx].port;
+  char *ip_str = inet_ntoa(mstr_shards[idx].shard.addr);
+  in_port_t port = mstr_shards[idx].shard.port;
   uint32_t ip_len = strlen(ip_str);
   uint32_t buf_len = sizeof(ip_len) + ip_len + sizeof(port);
   uint8_t *buf = malloc(buf_len);
@@ -257,13 +281,14 @@ void handle_shard_heartbeat(uint8_t *payload) {
   int start = 0, end = num_shards - 1;
   while (start <= end) {
     int middle = start + (end - start) / 2;
-    if (shards[middle].id == id) {
-      shards[middle].expiration = time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK;
+    if (mstr_shards[middle].id == id) {
+      mstr_shards[middle].expiration =
+          time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK;
       printf("Registered heartbeat for shard with id: %u, will expire %s \n",
-             id, asctime(localtime(&shards[middle].expiration)));
+             id, asctime(localtime(&mstr_shards[middle].expiration)));
       break;
     }
-    if (shards[middle].id < id) {
+    if (mstr_shards[middle].id < id) {
       start = middle + 1;
     } else {
       end = middle - 1;
