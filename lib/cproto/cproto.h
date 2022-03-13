@@ -42,7 +42,7 @@ typedef struct {
 } CanaryMsg;
 
 typedef struct {
-  unsigned long id;
+  uint32_t id;
   struct in_addr ip;
   in_port_t port;
 } CanaryShardInfo;

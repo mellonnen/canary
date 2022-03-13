@@ -38,6 +38,7 @@ void *worker_thread(void *arg);
 void handle_connection(conn_ctx_t *ctx);
 void handle_shard_registration(int socket, uint8_t *payload, IA shard_addr);
 void handle_shard_selection(int socket, uint8_t *payload);
+void handle_shard_heartbeat(uint8_t *payload);
 
 int main(int argc, char *argv[]) {
   int opt;
@@ -140,6 +141,9 @@ void handle_connection(conn_ctx_t *ctx) {
   case Client2CnfDiscover:
     handle_shard_selection(socket, msg.payload);
     break;
+  case Shard2CnfHeartbeat:
+    handle_shard_heartbeat(msg.payload);
+    break;
   default:
     send_error_msg(socket, "Incorrect Canary message type");
     break;
@@ -149,7 +153,8 @@ void handle_connection(conn_ctx_t *ctx) {
 void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
   in_port_t port;
   unpack_short(&port, payload);
-  CanaryShardInfo shard = {.id = rand64(), .ip = addr, .port = port};
+  uint32_t id = rand();
+  CanaryShardInfo shard = {.id = id, .ip = addr, .port = port};
 
   // CRITICAL SECTION BEGIN
   pthread_rwlock_rdlock(&shards_lock);
@@ -164,16 +169,19 @@ void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
   pthread_rwlock_unlock(&shards_lock);
   // CRITICAL SECTION END
 
-  printf("Registered shard : {\n\tid: %lu,\n\tip: %s\n\tport: %d\n}\n",
-         shard.id, inet_ntoa(shard.ip), shard.port);
+  printf("Registered shard : {\n\tid: %d,\n\tip: %s\n\tport: %d\n}\n", shard.id,
+         inet_ntoa(shard.ip), shard.port);
 
-  send_msg(socket, (CanaryMsg){.type = Cnf2MstrRegister, .payload_len = 0});
+  uint32_t n_id = htonl(id);
+  send_msg(socket, (CanaryMsg){.type = Cnf2MstrRegister,
+                               .payload_len = sizeof(uint32_t),
+                               .payload = (uint8_t *)&n_id});
 }
 
 void handle_shard_selection(int socket, uint8_t *payload) {
   // cast payload to string and hash it.
   char *key = (char *)payload;
-  size_t hash = hash_djb2(key);
+  size_t hash = hash_djb2(key) % RAND_MAX;
 
   // Binary search to find the first shard.id > hash.
   int start = 0, end = num_shards, middle;
@@ -206,4 +214,9 @@ void handle_shard_selection(int socket, uint8_t *payload) {
   printf(
       "Notified that shard at %s:%d has responsibility of key %s to client\n",
       ip_str, port, key);
+}
+
+void handle_shard_heartbeat(uint8_t *payload) {
+  uint32_t id = ntohl(*(uint32_t *)payload);
+  printf("Shard with id %u sent heartbeat\n", id);
 }

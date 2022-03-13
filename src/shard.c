@@ -20,8 +20,20 @@
 #define BACKLOG 100
 #define MAX_THREADS 10
 #define MAX_CACHE_CAPACITY 1000
+#define HEARTBEAT_INTERVAL 10
 
-pthread_t thread_pool[MAX_THREADS];
+typedef enum {
+  Unassigned,
+  Master,
+  Follower,
+} ShardRole;
+
+ShardRole role = Unassigned;
+
+char cnf_addr[20] = DEFAULT_CNF_ADDR;
+in_port_t cnf_port = DEFAULT_CNF_PORT;
+
+pthread_t thread_pool[MAX_THREADS], heartbeat;
 conn_queue_t conn_q;
 pthread_cond_t conn_q_cond;
 pthread_mutex_t conn_q_lock;
@@ -29,9 +41,12 @@ pthread_mutex_t conn_q_lock;
 lru_cache_t *cache;
 pthread_mutex_t cache_lock;
 
-int register_with_cnf(char *cnf_ip, in_port_t cnf_port, in_port_t shard_port);
+int register_with_cnf(char *cnf_addr, in_port_t cnf_port, in_port_t shard_port);
 int run(in_port_t shard_port);
+
 void *worker_thread(void *arg);
+void *heartbeat_thread(void *arg);
+
 void handle_connection(conn_ctx_t *ctx);
 void handle_put(uint8_t *payload);
 void handle_get(int socket, uint8_t *payload);
@@ -40,9 +55,7 @@ int main(int argc, char *argv[]) {
   int opt;
 
   int num_threads = MAX_THREADS, cache_capacity = MAX_CACHE_CAPACITY;
-  in_port_t shard_port = DEFAULT_SHARD_PORT, cnf_port = DEFAULT_CNF_PORT;
-  char cnf_addr[20];
-  strcpy(cnf_addr, DEFAULT_CNF_ADDR);
+  in_port_t shard_port = DEFAULT_SHARD_PORT;
 
   while ((opt = getopt(argc, argv, "p:P:a:c:t:")) != -1) {
     switch (opt) {
@@ -102,8 +115,9 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
 
   switch (msg.type) {
   case Cnf2MstrRegister:
-    printf("Successfully registered shard.\n");
-    return 0;
+    role = Master;
+    printf("Successfully registered shard as a master shard.\n");
+    break;
   case Error:
     printf("Failed to register shard: %s\n", msg.payload);
     return -1;
@@ -111,6 +125,10 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
     printf("Received wrong message type %d\n", msg.type);
     return -1;
   }
+  uint32_t *id = malloc(sizeof(uint32_t));
+  memcpy(id, msg.payload, sizeof(uint32_t));
+  pthread_create(&heartbeat, NULL, heartbeat_thread, (void *)id);
+  return 0;
 }
 
 void *worker_thread(void *arg) {
@@ -133,6 +151,28 @@ void *worker_thread(void *arg) {
            inet_ntoa(ctx->client_addr), ctx->port);
 
     handle_connection(ctx);
+  }
+}
+
+void *heartbeat_thread(void *arg) {
+  int socket;
+
+  uint32_t id = *(uint32_t *)arg;
+  int payload_len = sizeof(id);
+  uint8_t *payload = (uint8_t *)&id;
+  CanaryMsg msg = {.type = Shard2CnfHeartbeat,
+                   .payload_len = payload_len,
+                   .payload = payload};
+
+  free(arg);
+  while (1) {
+    sleep(HEARTBEAT_INTERVAL);
+    if ((socket = connect_to_socket(cnf_addr, cnf_port)) == -1) {
+      printf("Heartbeat thread could not connect to cnf\n");
+      continue;
+    }
+    send_msg(socket, msg);
+    close(socket);
   }
 }
 
