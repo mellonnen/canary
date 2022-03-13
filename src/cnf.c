@@ -206,7 +206,7 @@ void handle_connection(conn_ctx_t *ctx) {
   case Client2CnfDiscover:
     handle_shard_selection(socket, msg.payload);
     break;
-  case Shard2CnfHeartbeat:
+  case Mstr2CnfHeartbeat:
     handle_shard_heartbeat(msg.payload);
     break;
   default:
@@ -303,13 +303,14 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
 
   char *mstr_addr = inet_ntoa(mstr_shards[mstr_idx].shard.addr);
   in_port_t mstr_port = mstr_shards[mstr_idx].shard.port;
+  uint32_t mstr_id = mstr_shards[mstr_idx].id;
 
-  int buf_len = sizeof(mstr_idx) + sizeof(flwr_idx) + sizeof(uint32_t) +
+  int buf_len = sizeof(mstr_id) + sizeof(flwr_idx) + sizeof(uint32_t) +
                 strlen(mstr_addr) + 1 + sizeof(mstr_port);
   uint8_t *buf = malloc(buf_len);
 
   // pack indexes.
-  pack_int_int(mstr_idx, flwr_idx, buf);
+  pack_int_int(mstr_id, flwr_idx, buf);
   // pack mstr addr and port.
   pack_string_short(mstr_addr, strlen(mstr_addr) + 1, mstr_port,
                     (buf + sizeof(mstr_idx) + sizeof(flwr_idx)));

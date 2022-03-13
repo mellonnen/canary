@@ -15,7 +15,8 @@ typedef enum {
   Cnf2FlwrRegister,
 
   // Shard heartbeats
-  Shard2CnfHeartbeat,
+  Mstr2CnfHeartbeat,
+  Flwr2CnfHeartbeat,
 
   // Get shard cnf_svc
   Client2CnfDiscover,

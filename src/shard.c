@@ -32,6 +32,7 @@ int run(in_port_t shard_port);
 // Thread functions.
 void *worker_thread(void *arg);
 void *master_heartbeat_thread(void *arg);
+void *follower_heartbeat_thread(void *arg);
 
 // Handlers.
 void handle_connection(conn_ctx_t *ctx);
@@ -166,9 +167,8 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
 
   switch (resp.type) {
   case Cnf2MstrRegister: {
-    uint32_t *id = malloc(sizeof(uint32_t));
-    memcpy(id, resp.payload, sizeof(uint32_t));
-    pthread_create(&heartbeat, NULL, master_heartbeat_thread, (void *)id);
+    pthread_create(&heartbeat, NULL, master_heartbeat_thread,
+                   (void *)resp.payload);
     printf("Successfully registered shard as a master shard\n");
     return 0;
   }
@@ -267,11 +267,40 @@ void *master_heartbeat_thread(void *arg) {
   uint32_t id = *(uint32_t *)arg;
   int payload_len = sizeof(id);
   uint8_t *payload = (uint8_t *)&id;
-  CanaryMsg msg = {.type = Shard2CnfHeartbeat,
+  CanaryMsg msg = {.type = Mstr2CnfHeartbeat,
                    .payload_len = payload_len,
                    .payload = payload};
 
   free(arg);
+  // sleep -> send message -> sleep ...
+  while (1) {
+    sleep(HEARTBEAT_INTERVAL);
+    if ((socket = connect_to_socket(cnf_addr, cnf_port)) == -1) {
+      printf("Heartbeat thread could not connect to cnf\n");
+      continue;
+    }
+    send_msg(socket, msg);
+    close(socket);
+  }
+}
+
+/**
+ * @brief Will periodically send a heartbeat to the configuration service.
+ *
+ * @param arg
+ * @return
+ */
+void *follower_heartbeat_thread(void *arg) {
+  int socket, payload_len = sizeof(uint32_t) * 2;
+  // copy the data to stack as pointer will be freed by other function call.
+  uint8_t *cnf_payload = (uint8_t *)arg;
+  uint8_t payload[payload_len];
+  memcpy(payload, cnf_payload, payload_len);
+
+  CanaryMsg msg = {.type = Flwr2CnfHeartbeat,
+                   .payload_len = payload_len,
+                   .payload = payload};
+
   // sleep -> send message -> sleep ...
   while (1) {
     sleep(HEARTBEAT_INTERVAL);
