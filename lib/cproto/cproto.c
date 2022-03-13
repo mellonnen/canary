@@ -200,6 +200,22 @@ int unpack_string_short(char **str, uint16_t *num, uint8_t *buf) {
   return 0;
 }
 
+int pack_int_int(uint32_t num1, uint32_t num2, uint8_t *buf) {
+  int bytes_packed = 0;
+  uint32_t n_num1 = htonl(num1), n_num2 = htonl(num2);
+
+  memcpy(buf + bytes_packed, &n_num1, sizeof(n_num1));
+  bytes_packed += sizeof(n_num1);
+
+  memcpy(buf + bytes_packed, &n_num2, sizeof(n_num2));
+  return 0;
+}
+int unpack_int_int(uint32_t *num1, uint32_t *num2, uint8_t *buf) {
+  *num1 = ntohl(*(uint32_t *)buf);
+  *num2 = ntohl(*(uint32_t *)(buf + sizeof(*num1)));
+  return 0;
+}
+
 /**
  * @brief Receives a message from the provided socket and loads it into the
  * provided CanaryMsg struct.
@@ -266,26 +282,4 @@ void send_error_msg(int socket, const char *error_msg) {
                    .payload_len = strlen(error_msg),
                    .payload = (uint8_t *)error_msg};
   send_msg(socket, msg);
-}
-
-/**
- * @brief Comparator for `CanaryShardInfo` meant to be used in `qsort`.
- *
- * @param a - void *
- * @param b - void *
- * @return 1 if a > b, -1 if a < b, 0 otherwise.
- */
-int compare_shards(const void *a, const void *b) {
-  CanaryShardInfo *x = (CanaryShardInfo *)a;
-  CanaryShardInfo *y = (CanaryShardInfo *)b;
-  if (x->expired)
-    return 1;
-  if (y->expired)
-    return -1;
-
-  if (x->id > y->id)
-    return +1;
-  if (x->id < y->id)
-    return -1;
-  return 0;
 }

@@ -1,13 +1,13 @@
 #include "../lib/cproto/cproto.h"
 #include <assert.h>
 #include <netinet/in.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
 void test_msg_serialization();
 void test_payload_packing();
-void test_compare_shards();
 
 int main(int argc, char *argv[]) {
   printf("\nTESTS FOR CANARY PROTOCOL HELPERS\n\n");
@@ -18,10 +18,6 @@ int main(int argc, char *argv[]) {
 
   printf("\tTesting payload packing/unpacking\n");
   test_payload_packing();
-  printf("\n");
-
-  printf("\tTesting shard info comparator\n");
-  test_compare_shards();
   printf("\n");
 
   return 0;
@@ -67,6 +63,7 @@ void test_payload_packing() {
   assert(strcmp(key1, key2) == 0);
   assert(value1 == value2);
   printf("✅\n");
+  free(string_int_buf);
 
   char *addr1 = "127.0.0.1", *addr2;
   uint32_t addr_len = strlen("127.0.0.1");
@@ -80,29 +77,14 @@ void test_payload_packing() {
   assert(strcmp(addr1, addr2) == 0);
   assert(port2 == port2);
   printf("✅\n");
-}
+  free(string_short_buf);
 
-void test_compare_shards() {
-  CanaryShardInfo arr[5] = {{.id = 0, .expired = false},
-                            {.id = 3, .expired = false},
-                            {.id = 0, .expired = true},
-                            {.id = 1, .expired = false}};
-  printf("\t\tTest with 3 initialized elements...");
-  qsort(arr, 4, sizeof(CanaryShardInfo), compare_shards);
-
-  assert(arr[0].id == 0);
-  assert(arr[1].id == 1);
-  assert(arr[2].id == 3);
-  assert(arr[3].expired);
-  printf("✅\n");
-
-  printf("\t\tTest add element...");
-  arr[4] = (CanaryShardInfo){2};
-  qsort(arr, 5, sizeof(CanaryShardInfo), compare_shards);
-  assert(arr[0].id == 0);
-  assert(arr[1].id == 1);
-  assert(arr[2].id == 2);
-  assert(arr[3].id == 3);
-  assert(arr[4].expired);
+  uint8_t int_int_buf[8];
+  uint32_t num1 = 1, num2 = 2, num3, num4;
+  printf("\t\tTest int-int packing/unpacking...");
+  pack_int_int(num1, num2, int_int_buf);
+  unpack_int_int(&num3, &num4, int_int_buf);
+  assert(num1 == num3);
+  assert(num2 == num4);
   printf("✅\n");
 }

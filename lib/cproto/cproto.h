@@ -11,7 +11,8 @@ typedef enum {
   // Register shards with cnf_svc
   Mstr2CnfRegister,
   Cnf2MstrRegister,
-  Flw2MstrRegister,
+  Flwr2CnfRegister,
+  Cnf2FlwrRegister,
 
   // Shard heartbeats
   Shard2CnfHeartbeat,
@@ -51,6 +52,8 @@ int pack_string_int(char *, uint32_t, int, uint8_t *);
 int unpack_string_int(char **, int *, uint8_t *);
 int pack_string_short(char *, uint32_t, uint16_t, uint8_t *);
 int unpack_string_short(char **, uint16_t *, uint8_t *);
+int pack_int_int(uint32_t, uint32_t, uint8_t[8]);
+int unpack_int_int(uint32_t *, uint32_t *, uint8_t[8]);
 
 int receive_msg(int, CanaryMsg *);
 int send_msg(int, CanaryMsg);
