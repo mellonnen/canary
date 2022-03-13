@@ -22,6 +22,12 @@
 #define MAX_THREADS 10
 #define MAX_CACHE_CAPACITY 1000
 #define HEARTBEAT_INTERVAL 10
+// ---------------- CUSTOM TYPES ------------------
+
+typedef enum {
+  Master,
+  Follower,
+} ShardRole;
 
 // ---------------- FUNCTION PROTOTYPES ------------
 
@@ -38,13 +44,6 @@ void *follower_heartbeat_thread(void *arg);
 void handle_connection(conn_ctx_t *ctx);
 void handle_put(uint8_t *payload);
 void handle_get(int socket, uint8_t *payload);
-
-// ---------------- CUSTOM TYPES ------------------
-
-typedef enum {
-  Master,
-  Follower,
-} ShardRole;
 
 // ---------------- GLOBAL VARIABLES --------------
 
@@ -166,30 +165,29 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
   receive_msg(cnf_socket, &resp);
 
   switch (resp.type) {
+  case Cnf2MstrRegister:
     pthread_create(&heartbeat, NULL, master_heartbeat_thread,
                    (void *)resp.payload);
     printf("Successfully registered shard as a master shard\n");
     close(cnf_socket);
     return 0;
   case Cnf2FlwrRegister:
+    pthread_create(&heartbeat, NULL, follower_heartbeat_thread,
+                   (void *)resp.payload);
     printf("Successfully registered shard as follower shard\n");
-
-    free(resp.payload);
     close(cnf_socket);
     return 0;
   case Error:
     printf("Failed to register shard: %s\n", resp.payload);
-
-    free(resp.payload);
-    close(cnf_socket);
-    return -1;
+    break;
   default:
     printf("Received wrong message type %d\n", resp.type);
-
-    free(resp.payload);
-    close(cnf_socket);
-    return -1;
+    break;
   }
+
+  free(resp.payload);
+  close(cnf_socket);
+  return -1;
 }
 
 /**

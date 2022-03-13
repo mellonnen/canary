@@ -25,25 +25,6 @@
 #define HEARTBEAT_INTERVAL_WITH_SLACK 15
 #define SHARD_MAITNENANCE_INTERVAL 20
 
-// ---------------- FUNCTION PROTOTYPES ------------
-
-// Runner functions.
-int run(in_port_t port);
-
-// Thread functions.
-void *worker_thread(void *arg);
-void *shard_maintenance_thread(void *arg);
-
-// Handlers.
-void handle_connection(conn_ctx_t *ctx);
-void handle_master_shard_registration(int socket, uint8_t *payload, IA addr);
-void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr);
-void handle_shard_selection(int socket, uint8_t *payload);
-void handle_shard_heartbeat(uint8_t *payload);
-
-// Utilities
-int compare_shards(const void *a, const void *b);
-
 // ---------------- CUSTOM TYPES ------------------
 
 // Represents the "location" of a shard in the network.
@@ -67,6 +48,27 @@ typedef struct {
   int num_flwrs;
   follower_shard_t *flwrs[MAX_FLWR_PER_MASTER];
 } master_shard_t;
+
+// ---------------- FUNCTION PROTOTYPES ------------
+
+// Runner functions.
+int run(in_port_t port);
+
+// Thread functions.
+void *worker_thread(void *arg);
+void *shard_maintenance_thread(void *arg);
+
+// Handlers.
+void handle_connection(conn_ctx_t *ctx);
+void handle_master_shard_registration(int socket, uint8_t *payload, IA addr);
+void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr);
+void handle_shard_selection(int socket, uint8_t *payload);
+void handle_master_shard_heartbeat(uint8_t *payload);
+void handle_flwr_shard_heartbeat(uint8_t *payload);
+
+// Utilities
+int compare_shards(const void *a, const void *b);
+master_shard_t *find_master_shard_by_id(uint32_t id);
 
 // ---------------- GLOBAL VARIABLES --------------
 
@@ -135,7 +137,7 @@ int main(int argc, char *argv[]) {
   return 0;
 }
 
-// Runner functions
+// RUNNER FUNCTIONS
 
 /**
  * @brief Runs the multithreaded socket server. Will receive connections and add
@@ -170,6 +172,8 @@ int run(in_port_t port) {
     pthread_mutex_unlock(&conn_q_lock);
   }
 }
+
+// THREAD FUNCTIONS
 
 /**
  * @brief Will grab a connection of the queue and handle it accordingly.
@@ -215,11 +219,29 @@ void *shard_maintenance_thread(void *arg) {
       int num_expired = 0;
 
       for (int i = 0; i < num_mstr_shards; i++) {
+        for (int j = 0; j < max_flwr_per_master; j++) {
+          follower_shard_t *flwr = mstr_shards[i].flwrs[j];
+          // Check follower shards expiration.
+          if (flwr != NULL && flwr->expiration < time(NULL)) {
+
+            printf("Follower shard at %s:%d has expired\n",
+                   inet_ntoa(mstr_shards[i].flwrs[j]->shard.addr),
+                   mstr_shards[i].flwrs[j]->shard.port);
+            // free pointer and sett slot to NULL
+            free(mstr_shards[i].flwrs[j]);
+            mstr_shards[i].flwrs[j] = NULL;
+            // update local and global flwr count.
+            mstr_shards[i].num_flwrs--;
+            if (flwr_per_master > 0)
+              flwr_per_master--;
+          }
+        }
         if (mstr_shards[i].expiration < time(NULL)) {
+          // TODO: Promote shard here
           mstr_shards[i].expired = true;
           num_expired++;
 
-          printf("Shard at %s:%d has expired\n",
+          printf("Master shard at %s:%d has expired\n",
                  inet_ntoa(mstr_shards[i].shard.addr),
                  mstr_shards[i].shard.port);
         }
@@ -235,7 +257,7 @@ void *shard_maintenance_thread(void *arg) {
   }
 }
 
-// Handlers.
+// HANDLERS
 
 /**
  * @brief Will handle a socket connection. Will in turn multiplex out to other
@@ -249,8 +271,6 @@ void handle_connection(conn_ctx_t *ctx) {
   CanaryMsg msg;
 
   free(ctx);
-
-  printf("monkey\n");
 
   if (receive_msg(socket, &msg) == -1) {
     send_error_msg(socket, "Could not receive message");
@@ -268,7 +288,10 @@ void handle_connection(conn_ctx_t *ctx) {
     handle_shard_selection(socket, msg.payload);
     break;
   case Mstr2CnfHeartbeat:
-    handle_shard_heartbeat(msg.payload);
+    handle_master_shard_heartbeat(msg.payload);
+    break;
+  case Flwr2CnfHeartbeat:
+    handle_flwr_shard_heartbeat(msg.payload);
     break;
   default:
     send_error_msg(socket, "Incorrect Canary message type");
@@ -450,25 +473,39 @@ void handle_shard_selection(int socket, uint8_t *payload) {
  *
  * @param payload - uint8_t;
  */
-void handle_shard_heartbeat(uint8_t *payload) {
+void handle_master_shard_heartbeat(uint8_t *payload) {
   uint32_t id = ntohl(*(uint32_t *)payload);
+  free(payload);
+
   // BEGIN CRITICAL SECTION
   pthread_rwlock_wrlock(&shards_lock);
-  int start = 0, end = num_mstr_shards;
-  while (start <= end) {
-    int middle = start + (end - start) / 2;
-    if (mstr_shards[middle].id == id) {
-      mstr_shards[middle].expiration =
-          time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK;
-      break;
-    }
-    if (mstr_shards[middle].id < id) {
-      start = middle + 1;
-    } else {
-      end = middle - 1;
-    }
-  }
+  master_shard_t *mstr = find_master_shard_by_id(id);
+
+  if (mstr != NULL)
+    mstr->expiration = time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK;
   pthread_rwlock_unlock(&shards_lock);
+  // END CRITICAL SECTION
+}
+
+/**
+ * @brief Takes in a heartbeat and will update the expiration of the shard.
+ *
+ * @param payload - uint8_t;
+ */
+void handle_flwr_shard_heartbeat(uint8_t *payload) {
+  uint32_t mstr_id, flwr_idx;
+  unpack_int_int(&mstr_id, &flwr_idx, payload);
+  free(payload);
+
+  // BEGIN CRITICAL SECTION
+  pthread_rwlock_wrlock(&shards_lock);
+  master_shard_t *mstr = find_master_shard_by_id(mstr_id);
+
+  if (mstr != NULL)
+    mstr->flwrs[flwr_idx]->expiration =
+        time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK;
+  pthread_rwlock_unlock(&shards_lock);
+  // END CRITICAL SECTION
 }
 
 /**
@@ -491,4 +528,28 @@ int compare_shards(const void *a, const void *b) {
   if (x->id < y->id)
     return -1;
   return 0;
+}
+
+/**
+ * @brief Finds the master shard by id using binary search.
+ *
+ * NOTE: Is not thread safe, should be executed in critical section.
+ *
+ * @param id - uint32_t
+ * @return pointer to the master shard, NULL if shard could not bee found.
+ */
+master_shard_t *find_master_shard_by_id(uint32_t id) {
+  int start = 0, end = num_mstr_shards;
+  while (start <= end) {
+    int middle = start + (end - start) / 2;
+    if (mstr_shards[middle].id == id) {
+      return &mstr_shards[middle];
+    }
+    if (mstr_shards[middle].id < id) {
+      start = middle + 1;
+    } else {
+      end = middle - 1;
+    }
+  }
+  return NULL;
 }
