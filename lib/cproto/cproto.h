@@ -1,5 +1,6 @@
 #ifndef __CPROTO_H__
 #define __CPROTO_H__
+#include <bits/types/time_t.h>
 #include <netinet/in.h>
 #include <stdbool.h>
 #include <stddef.h>
@@ -45,6 +46,7 @@ typedef struct {
   uint32_t id;
   struct in_addr ip;
   in_port_t port;
+  time_t expiration;
 } CanaryShardInfo;
 
 int serialize(CanaryMsg, uint8_t **);

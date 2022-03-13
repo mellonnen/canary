@@ -21,6 +21,7 @@
 
 #define MAXSHARDS 100
 #define MAXTHREADS 10
+#define HEARTBEAT_INTERVAL_WITH_SLACK 15
 
 CanaryShardInfo shards[MAXSHARDS];
 pthread_rwlock_t shards_lock;
@@ -154,7 +155,11 @@ void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
   in_port_t port;
   unpack_short(&port, payload);
   uint32_t id = rand();
-  CanaryShardInfo shard = {.id = id, .ip = addr, .port = port};
+  CanaryShardInfo shard = {.id = id,
+                           .ip = addr,
+                           .port = port,
+                           .expiration =
+                               time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK};
 
   // CRITICAL SECTION BEGIN
   pthread_rwlock_rdlock(&shards_lock);
@@ -184,7 +189,7 @@ void handle_shard_selection(int socket, uint8_t *payload) {
   size_t hash = hash_djb2(key) % RAND_MAX;
 
   // Binary search to find the first shard.id > hash.
-  int start = 0, end = num_shards, middle;
+  int start = 0, end = num_shards - 1, middle;
   while (start <= end) {
     middle = start + (end - start) / 2;
 
@@ -218,5 +223,22 @@ void handle_shard_selection(int socket, uint8_t *payload) {
 
 void handle_shard_heartbeat(uint8_t *payload) {
   uint32_t id = ntohl(*(uint32_t *)payload);
-  printf("Shard with id %u sent heartbeat\n", id);
+  int start = 0, end = num_shards - 1;
+  // BEGIN CRITICAL SECTION
+  pthread_rwlock_unlock(&shards_lock);
+  while (start <= end) {
+    int middle = start + (end - start) / 2;
+    if (shards[middle].id == id) {
+      shards[middle].expiration = time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK;
+      printf("Registered heartbeat for shard with id: %u, will expire %s \n",
+             id, asctime(localtime(&shards[middle].expiration)));
+      break;
+    }
+    if (shards[middle].id < id) {
+      start = middle + 1;
+    } else {
+      end = middle - 1;
+    }
+  }
+  pthread_rwlock_unlock(&shards_lock);
 }
