@@ -279,7 +279,7 @@ int send_msg(int socket, CanaryMsg msg) {
  */
 void send_error_msg(int socket, const char *error_msg) {
   CanaryMsg msg = {.type = Error,
-                   .payload_len = strlen(error_msg),
+                   .payload_len = strlen(error_msg) + 1,
                    .payload = (uint8_t *)error_msg};
   send_msg(socket, msg);
 }

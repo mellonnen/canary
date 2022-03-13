@@ -23,13 +23,11 @@
 #define HEARTBEAT_INTERVAL 10
 
 typedef enum {
-  Unassigned,
   Master,
   Follower,
 } ShardRole;
 
-ShardRole role = Unassigned;
-
+ShardRole role = Master;
 char cnf_addr[20] = DEFAULT_CNF_ADDR;
 in_port_t cnf_port = DEFAULT_CNF_PORT;
 
@@ -57,7 +55,7 @@ int main(int argc, char *argv[]) {
   int num_threads = MAX_THREADS, cache_capacity = MAX_CACHE_CAPACITY;
   in_port_t shard_port = DEFAULT_SHARD_PORT;
 
-  while ((opt = getopt(argc, argv, "p:P:a:c:t:")) != -1) {
+  while ((opt = getopt(argc, argv, "p:P:a:c:t:f")) != -1) {
     switch (opt) {
     case 'p':
       shard_port = atoi(optarg);
@@ -66,7 +64,7 @@ int main(int argc, char *argv[]) {
       cnf_port = atoi(optarg);
       break;
     case 'a':
-      memset(cnf_addr, 0, strlen(cnf_addr));
+      memset(cnf_addr, 0, strlen(cnf_addr) + 1);
       strcpy(cnf_addr, optarg);
       break;
     case 'c':
@@ -78,9 +76,12 @@ int main(int argc, char *argv[]) {
       num_threads = atoi(optarg);
       num_threads = num_threads > MAX_THREADS ? MAX_THREADS : num_threads;
       break;
+    case 'f':
+      role = Follower;
+      break;
     default:
       printf("Usage: %s [-p <shard-port] [-P <cnf-port>] [-a <cnf-addr>] [-c "
-             "<cache-capacity>] [-t <num-threads]\n",
+             "<cache-capacity>] [-t <num-threads], [-f]\n",
              argv[0]);
       exit(EXIT_FAILURE);
     }
@@ -102,32 +103,40 @@ int main(int argc, char *argv[]) {
 
 int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
                       in_port_t shard_port) {
-
+  CanaryMsg req, resp;
   int cnf_socket = connect_to_socket(cnf_addr, cnf_port);
 
   uint8_t payload[2];
   pack_short(shard_port, payload);
-  send_msg(cnf_socket, (CanaryMsg){.type = Mstr2CnfRegister,
-                                   .payload_len = 2,
-                                   .payload = payload});
-  CanaryMsg msg;
-  receive_msg(cnf_socket, &msg);
 
-  switch (msg.type) {
-  case Cnf2MstrRegister:
-    role = Master;
-    printf("Successfully registered shard as a master shard.\n");
-    break;
+  req = (CanaryMsg){.payload_len = 2, .payload = payload};
+
+  if (role == Master) {
+    req.type = Mstr2CnfRegister;
+  } else {
+    req.type = Flwr2CnfRegister;
+  }
+  send_msg(cnf_socket, req);
+  receive_msg(cnf_socket, &resp);
+
+  switch (resp.type) {
+  case Cnf2MstrRegister: {
+    uint32_t *id = malloc(sizeof(uint32_t));
+    memcpy(id, resp.payload, sizeof(uint32_t));
+    pthread_create(&heartbeat, NULL, heartbeat_thread, (void *)id);
+    printf("Successfully registered shard as a master shard\n");
+    return 0;
+  }
+  case Cnf2FlwrRegister:
+    printf("Successfully registered shard as follower shard\n");
+    return 0;
   case Error:
-    printf("Failed to register shard: %s\n", msg.payload);
+    printf("Failed to register shard: %s\n", resp.payload);
     return -1;
   default:
-    printf("Received wrong message type %d\n", msg.type);
+    printf("Received wrong message type %d\n", resp.type);
     return -1;
   }
-  uint32_t *id = malloc(sizeof(uint32_t));
-  memcpy(id, msg.payload, sizeof(uint32_t));
-  pthread_create(&heartbeat, NULL, heartbeat_thread, (void *)id);
   return 0;
 }
 

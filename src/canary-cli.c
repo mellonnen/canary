@@ -26,7 +26,7 @@ int main(int argc, char *argv[]) {
       cnf_port = atoi(optarg);
       break;
     case 'a':
-      memset(cnf_addr, 0, strlen(cnf_addr));
+      memset(cnf_addr, 0, strlen(cnf_addr) + 1);
       strcpy(cnf_addr, optarg);
       break;
     default:
@@ -34,7 +34,7 @@ int main(int argc, char *argv[]) {
       exit(EXIT_FAILURE);
     }
   }
-  cache.cnf_addr = malloc(strlen(cnf_addr));
+  cache.cnf_addr = malloc(strlen(cnf_addr) + 1);
   cache = create_canary_cache(cnf_addr, cnf_port);
   printf("Welcome to the Canary-cli!\n\n This is an interface for the Canary "
          "distributed cache,\n make sure that you have started the "

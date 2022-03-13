@@ -45,7 +45,7 @@ int get_shard(int socket, char *key, char **addr, in_port_t *port) {
   CanaryMsg req, resp;
 
   req = (CanaryMsg){.type = Client2CnfDiscover,
-                    .payload_len = strlen(key),
+                    .payload_len = strlen(key) + 1,
                     .payload = (uint8_t *)key};
 
   send_msg(socket, req);
@@ -61,7 +61,7 @@ int get_shard(int socket, char *key, char **addr, in_port_t *port) {
 int *get_from_shard(int socket, char *key) {
   CanaryMsg req, resp;
 
-  uint32_t payload_len = strlen(key);
+  uint32_t payload_len = strlen(key) + 1;
   req = (CanaryMsg){.type = Client2ShardGet,
                     .payload_len = payload_len,
                     .payload = (uint8_t *)key};
@@ -78,7 +78,7 @@ int *get_from_shard(int socket, char *key) {
   return (int *)resp.payload;
 }
 void put_in_shard(int socket, char *key, int value) {
-  uint32_t key_len = strlen(key);
+  uint32_t key_len = strlen(key) + 1;
   size_t payload_len = sizeof(key_len) + key_len + sizeof(value);
 
   uint8_t *payload = malloc(payload_len);

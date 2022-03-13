@@ -53,7 +53,7 @@ void test_payload_packing() {
   printf("✅\n");
 
   char *key1 = "limpan", *key2;
-  uint32_t key_len = strlen(key1);
+  uint32_t key_len = strlen(key1) + 1;
   int value1 = 15, value2;
   uint8_t *string_int_buf = malloc(sizeof(key_len) + key_len + sizeof(value1));
 
@@ -66,7 +66,7 @@ void test_payload_packing() {
   free(string_int_buf);
 
   char *addr1 = "127.0.0.1", *addr2;
-  uint32_t addr_len = strlen("127.0.0.1");
+  uint32_t addr_len = strlen("127.0.0.1") + 1;
   port1 = 8080, port2 = 0;
   uint8_t *string_short_buf =
       malloc(sizeof(addr_len) + addr_len + sizeof(port1));
