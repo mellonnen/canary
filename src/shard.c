@@ -14,6 +14,7 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+// ---------------- DEFAULT VALUES ----------------
 #define DEFAULT_CNF_PORT 8080
 #define DEFAULT_CNF_ADDR "127.0.0.1"
 #define DEFAULT_SHARD_PORT 6969
@@ -22,39 +23,64 @@
 #define MAX_CACHE_CAPACITY 1000
 #define HEARTBEAT_INTERVAL 10
 
+// ---------------- FUNCTION PROTOTYPES ------------
+
+// Runner functions.
+int register_with_cnf(char *cnf_addr, in_port_t cnf_port, in_port_t shard_port);
+int run(in_port_t shard_port);
+
+// Thread functions.
+void *worker_thread(void *arg);
+void *master_heartbeat_thread(void *arg);
+
+// Handlers.
+void handle_connection(conn_ctx_t *ctx);
+void handle_put(uint8_t *payload);
+void handle_get(int socket, uint8_t *payload);
+
+// ---------------- CUSTOM TYPES ------------------
+
 typedef enum {
   Master,
   Follower,
 } ShardRole;
 
+// ---------------- GLOBAL VARIABLES --------------
+
 ShardRole role = Master;
+
+// Address and port of configuration service.
 char cnf_addr[20] = DEFAULT_CNF_ADDR;
 in_port_t cnf_port = DEFAULT_CNF_PORT;
 
-pthread_t thread_pool[MAX_THREADS], heartbeat;
+// Variables related to threading.
+
+// Thread pool variables.
 conn_queue_t conn_q;
+pthread_t thread_pool[MAX_THREADS], heartbeat;
 pthread_cond_t conn_q_cond;
 pthread_mutex_t conn_q_lock;
 
+// local LRU cache protected by mutex.
 lru_cache_t *cache;
 pthread_mutex_t cache_lock;
 
-int register_with_cnf(char *cnf_addr, in_port_t cnf_port, in_port_t shard_port);
-int run(in_port_t shard_port);
+// ---------------- IMPLEMENTATION -----------------
 
-void *worker_thread(void *arg);
-void *heartbeat_thread(void *arg);
-
-void handle_connection(conn_ctx_t *ctx);
-void handle_put(uint8_t *payload);
-void handle_get(int socket, uint8_t *payload);
-
+/**
+ * @brief Runner function.
+ *
+ * - Parses command line arguments into local/global values.
+ * - Registers shard with configuration service
+ * - Runs the shard socket server.
+ *
+ */
 int main(int argc, char *argv[]) {
   int opt;
-
   int num_threads = MAX_THREADS, cache_capacity = MAX_CACHE_CAPACITY;
   in_port_t shard_port = DEFAULT_SHARD_PORT;
 
+  // Parse flags
   while ((opt = getopt(argc, argv, "p:P:a:c:t:f")) != -1) {
     switch (opt) {
     case 'p':
@@ -86,21 +112,40 @@ int main(int argc, char *argv[]) {
       exit(EXIT_FAILURE);
     }
   }
-  cache = create_lru_cache(cache_capacity);
-  conn_q = create_queue();
 
+  // Initialize local LRU cache.
+  cache = create_lru_cache(cache_capacity);
+
+  // Register shard with configuration service.
   if (register_with_cnf(cnf_addr, cnf_port, shard_port) == -1) {
+    printf("Could not register with configuration service\n");
     exit(EXIT_FAILURE);
   }
 
+  // Create connection queue and worker thread.
+  conn_q = create_queue();
   for (long i = 0; i < num_threads; i++) {
     pthread_create(&thread_pool[i], NULL, worker_thread, (void *)i);
   }
 
-  if (run(shard_port) == -1)
+  // Run socket server.
+  if (run(shard_port) == -1) {
+    printf("Could not run socket server\n");
     exit(EXIT_FAILURE);
+  }
 }
 
+// RUNNER FUNCTIONS
+
+/**
+ * @brief Registers shard with configuration service and creates heartbeat
+ * thread.
+ *
+ * @param cnf_addr - char*
+ * @param cnf_port - in_port_t
+ * @param shard_port -in_port_t
+ * @return -1 in case of error, 0 otherwise.
+ */
 int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
                       in_port_t shard_port) {
   CanaryMsg req, resp;
@@ -123,7 +168,7 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
   case Cnf2MstrRegister: {
     uint32_t *id = malloc(sizeof(uint32_t));
     memcpy(id, resp.payload, sizeof(uint32_t));
-    pthread_create(&heartbeat, NULL, heartbeat_thread, (void *)id);
+    pthread_create(&heartbeat, NULL, master_heartbeat_thread, (void *)id);
     printf("Successfully registered shard as a master shard\n");
     return 0;
   }
@@ -137,17 +182,63 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
     printf("Received wrong message type %d\n", resp.type);
     return -1;
   }
+  close(cnf_socket);
   return 0;
 }
 
+/**
+ * @brief Runs the multithreaded socket server. Will accept a socket connection
+ * and put it on the connection queue for a worker thread to pick up.
+ *
+ * @param shard_port - in_port_t
+ * @return -1 in case of error, 0 otherwise.
+ */
+int run(in_port_t shard_port) {
+  int shard_socket, client_socket, addr_size;
+  SA_IN client_addr;
+
+  if ((shard_socket = bind_n_listen_socket(shard_port, BACKLOG)) == -1)
+    return -1;
+
+  while (1) {
+    addr_size = sizeof(SA_IN);
+    if ((client_socket = accept(shard_socket, (SA *)&client_addr,
+                                (socklen_t *)&addr_size)) == -1) {
+      printf("Accept failed\n");
+      continue;
+    }
+
+    // Allocate on heap, freed by worker.
+    conn_ctx_t *ctx = malloc(sizeof(conn_ctx_t));
+    *ctx = (conn_ctx_t){.socket = client_socket,
+                        .client_addr = client_addr.sin_addr,
+                        .port = client_addr.sin_port};
+
+    // CRITICAL SECTION BEGIN
+    pthread_mutex_lock(&conn_q_lock);
+    enqueue(&conn_q, ctx);
+    pthread_cond_signal(&conn_q_cond);
+    pthread_mutex_unlock(&conn_q_lock);
+    // CRITICAL SECTION END
+  }
+}
+
+// THREAD FUNCTIONS
+
+/**
+ * @brief Will grab a connection of the queue and handle it accordingly.
+ *
+ * @param arg - void *
+ */
 void *worker_thread(void *arg) {
-  long tid = (long)arg;
+  long tid = (long)arg; // id for logging.
   while (1) {
     conn_ctx_t *ctx;
 
     // CRITICAL SECTION BEGIN
     pthread_mutex_lock(&conn_q_lock);
     if ((ctx = dequeue(&conn_q)) == NULL) {
+      // Suspend if there is no work.
       pthread_cond_wait(&conn_q_cond, &conn_q_lock);
 
       // retry
@@ -163,9 +254,16 @@ void *worker_thread(void *arg) {
   }
 }
 
-void *heartbeat_thread(void *arg) {
+/**
+ * @brief Will periodically send a heartbeat to the configuration service.
+ *
+ * @param arg - void *
+ * @return
+ */
+void *master_heartbeat_thread(void *arg) {
   int socket;
 
+  // As the message payload is always identical we can create it in advance.
   uint32_t id = *(uint32_t *)arg;
   int payload_len = sizeof(id);
   uint8_t *payload = (uint8_t *)&id;
@@ -174,6 +272,7 @@ void *heartbeat_thread(void *arg) {
                    .payload = payload};
 
   free(arg);
+  // sleep -> send message -> sleep ...
   while (1) {
     sleep(HEARTBEAT_INTERVAL);
     if ((socket = connect_to_socket(cnf_addr, cnf_port)) == -1) {
@@ -185,48 +284,26 @@ void *heartbeat_thread(void *arg) {
   }
 }
 
-int run(in_port_t shard_port) {
-  int shard_socket, client_socket, addr_size;
-  SA_IN client_addr;
+// HANDLERS
 
-  if ((shard_socket = bind_n_listen_socket(shard_port, BACKLOG)) == -1)
-    return -1;
-
-  while (1) {
-    printf("Waiting for connections...\n\n");
-    addr_size = sizeof(SA_IN);
-
-    if ((client_socket = accept(shard_socket, (SA *)&client_addr,
-                                (socklen_t *)&addr_size)) == -1) {
-      printf("Accept failed\n\n");
-      continue;
-    }
-
-    conn_ctx_t *ctx = malloc(sizeof(conn_ctx_t));
-    *ctx = (conn_ctx_t){.socket = client_socket,
-                        .client_addr = client_addr.sin_addr,
-                        .port = client_addr.sin_port};
-
-    // CRITICAL SECTION BEGIN
-    pthread_mutex_lock(&conn_q_lock);
-    enqueue(&conn_q, ctx);
-    pthread_cond_signal(&conn_q_cond);
-    pthread_mutex_unlock(&conn_q_lock);
-    // CRITICAL SECTION END
-  }
-}
-
+/**
+ * @brief Will handle a socket connection. Will in turn multiplex out to other
+ * handlers depending on what type of message is received.
+ *
+ * @param ctx - conn_ctx_t
+ */
 void handle_connection(conn_ctx_t *ctx) {
   int socket = ctx->socket;
   CanaryMsg msg;
 
-  free(ctx);
+  free(ctx); // we have copied the necessary data.
 
   if (receive_msg(socket, &msg) == -1) {
     send_error_msg(socket, "Could not receive message");
     return;
   }
 
+  // Multiplex out to other handlers.
   switch (msg.type) {
   case Client2MstrPut:
     handle_put(msg.payload);
@@ -240,6 +317,11 @@ void handle_connection(conn_ctx_t *ctx) {
   }
 }
 
+/**
+ * @brief Handles a `put` operation by a client.
+ *
+ * @param payload - uint8_t *
+ */
 void handle_put(uint8_t *payload) {
   char *key;
   int value;
@@ -262,6 +344,12 @@ void handle_put(uint8_t *payload) {
   }
 }
 
+/**
+ * @brief Handles a `get` operation by a client.
+ *
+ * @param socket - int
+ * @param payload - uint8_t *
+ */
 void handle_get(int socket, uint8_t *payload) {
   CanaryMsg msg = {.type = Shard2ClientGet};
 
