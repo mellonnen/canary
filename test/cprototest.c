@@ -31,7 +31,7 @@ void test_msg_serialization() {
   CanaryMsg msg, msg2;
   char *payload = "this is a payload";
   uint8_t *buf;
-  msg.type = RegisterCnf2Mstr;
+  msg.type = Cnf2MstrRegister;
   msg.payload = (uint8_t *)payload;
   msg.payload_len = strlen(payload) + 1;
 
@@ -83,25 +83,26 @@ void test_payload_packing() {
 }
 
 void test_compare_shards() {
-  CanaryShardInfo arr[4] = {
-      {.id = 0},
-      {.id = 3},
-      {.id = 1},
-  };
+  CanaryShardInfo arr[5] = {{.id = 0, .expired = false},
+                            {.id = 3, .expired = false},
+                            {.id = 0, .expired = true},
+                            {.id = 1, .expired = false}};
   printf("\t\tTest with 3 initialized elements...");
-  qsort(arr, 3, sizeof(CanaryShardInfo), compare_shards);
+  qsort(arr, 4, sizeof(CanaryShardInfo), compare_shards);
 
   assert(arr[0].id == 0);
   assert(arr[1].id == 1);
   assert(arr[2].id == 3);
+  assert(arr[3].expired);
   printf("✅\n");
 
   printf("\t\tTest add element...");
-  arr[3] = (CanaryShardInfo){2};
-  qsort(arr, 4, sizeof(CanaryShardInfo), compare_shards);
+  arr[4] = (CanaryShardInfo){2};
+  qsort(arr, 5, sizeof(CanaryShardInfo), compare_shards);
   assert(arr[0].id == 0);
   assert(arr[1].id == 1);
   assert(arr[2].id == 2);
   assert(arr[3].id == 3);
+  assert(arr[4].expired);
   printf("✅\n");
 }

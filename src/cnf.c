@@ -159,7 +159,8 @@ void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
                            .ip = addr,
                            .port = port,
                            .expiration =
-                               time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK};
+                               time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK,
+                           .expired = false};
 
   // CRITICAL SECTION BEGIN
   pthread_rwlock_rdlock(&shards_lock);
@@ -223,9 +224,9 @@ void handle_shard_selection(int socket, uint8_t *payload) {
 
 void handle_shard_heartbeat(uint8_t *payload) {
   uint32_t id = ntohl(*(uint32_t *)payload);
-  int start = 0, end = num_shards - 1;
   // BEGIN CRITICAL SECTION
   pthread_rwlock_unlock(&shards_lock);
+  int start = 0, end = num_shards - 1;
   while (start <= end) {
     int middle = start + (end - start) / 2;
     if (shards[middle].id == id) {

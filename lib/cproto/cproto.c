@@ -278,6 +278,11 @@ void send_error_msg(int socket, const char *error_msg) {
 int compare_shards(const void *a, const void *b) {
   CanaryShardInfo *x = (CanaryShardInfo *)a;
   CanaryShardInfo *y = (CanaryShardInfo *)b;
+  if (x->expired)
+    return 1;
+  if (y->expired)
+    return -1;
+
   if (x->id > y->id)
     return +1;
   if (x->id < y->id)

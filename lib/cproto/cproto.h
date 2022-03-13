@@ -47,6 +47,7 @@ typedef struct {
   struct in_addr ip;
   in_port_t port;
   time_t expiration;
+  bool expired;
 } CanaryShardInfo;
 
 int serialize(CanaryMsg, uint8_t **);
