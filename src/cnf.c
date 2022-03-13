@@ -23,6 +23,7 @@
 #define MAXTHREADS 10
 
 CanaryShardInfo shards[MAXSHARDS];
+pthread_rwlock_t shards_lock;
 
 pthread_t thread_pool[MAXTHREADS];
 
@@ -101,8 +102,9 @@ void *worker_thread(void *arg) {
   long tid = (long)arg;
   while (1) {
     conn_ctx_t *ctx;
-    pthread_mutex_lock(&conn_q_lock);
 
+    // CRITICAL SECTION BEGIN
+    pthread_mutex_lock(&conn_q_lock);
     if ((ctx = dequeue(&conn_q)) == NULL) {
       pthread_cond_wait(&conn_q_cond, &conn_q_lock);
 
@@ -110,8 +112,11 @@ void *worker_thread(void *arg) {
       ctx = dequeue(&conn_q);
     }
     pthread_mutex_unlock(&conn_q_lock);
+    // CRITICAL SECTION END
+
     printf("Thread: %ld is handling connection from %s:%d\n", tid,
            inet_ntoa(ctx->client_addr), ctx->port);
+
     handle_connection(ctx);
   }
 }
@@ -144,17 +149,24 @@ void handle_connection(conn_ctx_t *ctx) {
 void handle_shard_registration(int socket, uint8_t *payload, IA addr) {
   in_port_t port;
   unpack_short(&port, payload);
+  CanaryShardInfo shard = {.id = rand64(), .ip = addr, .port = port};
+
+  // CRITICAL SECTION BEGIN
+  pthread_rwlock_rdlock(&shards_lock);
   if (num_shards >= MAXSHARDS) {
     printf("Could not register shard at %s:%d\n", inet_ntoa(addr), port);
     send_error_msg(socket, "Reached max shard capacity");
     return;
   }
-  CanaryShardInfo shard = {.id = rand64(), .ip = addr, .port = port};
   shards[num_shards] = shard;
   num_shards++;
   qsort(shards, num_shards, sizeof(CanaryShardInfo), compare_shards);
+  pthread_rwlock_unlock(&shards_lock);
+  // CRITICAL SECTION END
+
   printf("Registered shard : {\n\tid: %lu,\n\tip: %s\n\tport: %d\n}\n",
          shard.id, inet_ntoa(shard.ip), shard.port);
+
   send_msg(socket, (CanaryMsg){.type = Cnf2MstrRegister, .payload_len = 0});
 }
 
@@ -189,15 +201,6 @@ void handle_shard_selection(int socket, uint8_t *payload) {
 
   CanaryMsg msg = {
       .type = Cnf2ClientDiscover, .payload_len = buf_len, .payload = buf};
-
-  printf("hash = %lu\n", hash);
-  printf("Shard ids:\n");
-  for (int i = 0; i < num_shards; i++) {
-    printf("{id=%lu, port=%d}", shards[i].id, shards[i].port);
-    if (i < num_shards - 1)
-      printf(" -> ");
-  }
-  printf("\n");
 
   send_msg(socket, msg);
   printf(
