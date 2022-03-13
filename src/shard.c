@@ -1,9 +1,12 @@
+#include "../lib/connq/connq.h"
 #include "../lib/cproto/cproto.h"
 #include "../lib/lru//lru.h"
 #include "../lib/nethelpers/nethelpers.h"
 #include <arpa/inet.h>
+#include <bits/getopt_core.h>
 #include <errno.h>
 #include <netinet/in.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,34 +14,83 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
-#define CNFPORT 8080
+#define DEFAULT_CNF_PORT 8080
+#define DEFAULT_CNF_ADDR "127.0.0.1"
+#define DEFAULT_SHARD_PORT 6969
 #define BACKLOG 100
+#define MAX_THREADS 10
+#define MAX_CACHE_CAPACITY 1000
+
+pthread_t thread_pool[MAX_THREADS];
+conn_queue_t conn_q;
+pthread_cond_t conn_q_cond;
+pthread_mutex_t conn_q_lock;
 
 lru_cache_t *cache;
+pthread_mutex_t cache_lock;
 
-int register_with_cnf(char *cnf_ip, in_port_t shard_port);
+int register_with_cnf(char *cnf_ip, in_port_t cnf_port, in_port_t shard_port);
 int run(in_port_t shard_port);
-void handle_connection(int client_socket, IA client_addr);
+void *worker_thread(void *arg);
+void handle_connection(conn_ctx_t *ctx);
 void handle_put(uint8_t *payload);
 void handle_get(int socket, uint8_t *payload);
 
 int main(int argc, char *argv[]) {
-  if (argc < 4) {
-    printf("Usage: ./shard <ip-of-cnf-service> <port-for-shard> <cache-size>");
+  int opt;
+
+  int num_threads = MAX_THREADS, cache_capacity = MAX_CACHE_CAPACITY;
+  in_port_t shard_port = DEFAULT_SHARD_PORT, cnf_port = DEFAULT_CNF_PORT;
+  char cnf_addr[20];
+  strcpy(cnf_addr, DEFAULT_CNF_ADDR);
+
+  while ((opt = getopt(argc, argv, "p:P:a:c:t:")) != -1) {
+    switch (opt) {
+    case 'p':
+      shard_port = atoi(optarg);
+      break;
+    case 'P':
+      cnf_port = atoi(optarg);
+      break;
+    case 'a':
+      memset(cnf_addr, 0, strlen(cnf_addr));
+      strcpy(cnf_addr, optarg);
+      break;
+    case 'c':
+      cache_capacity = atoi(optarg);
+      cache_capacity = cache_capacity > MAX_CACHE_CAPACITY ? MAX_CACHE_CAPACITY
+                                                           : cache_capacity;
+      break;
+    case 't':
+      num_threads = atoi(optarg);
+      num_threads = num_threads > MAX_THREADS ? MAX_THREADS : num_threads;
+      break;
+    default:
+      printf("Usage: %s [-p <shard-port] [-P <cnf-port>] [-a <cnf-addr>] [-c "
+             "<cache-capacity>] [-t <num-threads]\n",
+             argv[0]);
+      exit(EXIT_FAILURE);
+    }
+  }
+  cache = create_lru_cache(cache_capacity);
+  conn_q = create_queue();
+
+  if (register_with_cnf(cnf_addr, cnf_port, shard_port) == -1) {
     exit(EXIT_FAILURE);
   }
-  in_port_t port = atoi(argv[2]);
-  if (register_with_cnf(argv[1], port) == -1)
-    exit(EXIT_FAILURE);
 
-  cache = create_lru_cache(atoi(argv[3]));
-  if (run(port) == -1)
+  for (long i = 0; i < num_threads; i++) {
+    pthread_create(&thread_pool[i], NULL, worker_thread, (void *)i);
+  }
+
+  if (run(shard_port) == -1)
     exit(EXIT_FAILURE);
 }
 
-int register_with_cnf(char *cnf_addr, in_port_t shard_port) {
+int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
+                      in_port_t shard_port) {
 
-  int cnf_socket = connect_to_socket(cnf_addr, CNFPORT);
+  int cnf_socket = connect_to_socket(cnf_addr, cnf_port);
 
   uint8_t payload[2];
   pack_short(shard_port, payload);
@@ -61,11 +113,35 @@ int register_with_cnf(char *cnf_addr, in_port_t shard_port) {
   }
 }
 
+void *worker_thread(void *arg) {
+  long tid = (long)arg;
+  while (1) {
+    conn_ctx_t *ctx;
+
+    // CRITICAL SECTION BEGIN
+    pthread_mutex_lock(&conn_q_lock);
+    if ((ctx = dequeue(&conn_q)) == NULL) {
+      pthread_cond_wait(&conn_q_cond, &conn_q_lock);
+
+      // retry
+      ctx = dequeue(&conn_q);
+    }
+    pthread_mutex_unlock(&conn_q_lock);
+    // CRITICAL SECTION END
+
+    printf("Thread: %ld is handling connection from %s:%d\n", tid,
+           inet_ntoa(ctx->client_addr), ctx->port);
+
+    handle_connection(ctx);
+  }
+}
+
 int run(in_port_t shard_port) {
   int shard_socket, client_socket, addr_size;
   SA_IN client_addr;
 
-  shard_socket = bind_n_listen_socket(shard_port, BACKLOG);
+  if ((shard_socket = bind_n_listen_socket(shard_port, BACKLOG)) == -1)
+    return -1;
 
   while (1) {
     printf("Waiting for connections...\n\n");
@@ -77,15 +153,25 @@ int run(in_port_t shard_port) {
       continue;
     }
 
-    printf("Made connection with %s:%d\n\n", inet_ntoa(client_addr.sin_addr),
-           ntohs(client_addr.sin_port));
+    conn_ctx_t *ctx = malloc(sizeof(conn_ctx_t));
+    *ctx = (conn_ctx_t){.socket = client_socket,
+                        .client_addr = client_addr.sin_addr,
+                        .port = client_addr.sin_port};
 
-    handle_connection(client_socket, client_addr.sin_addr);
+    // CRITICAL SECTION BEGIN
+    pthread_mutex_lock(&conn_q_lock);
+    enqueue(&conn_q, ctx);
+    pthread_cond_signal(&conn_q_cond);
+    pthread_mutex_unlock(&conn_q_lock);
+    // CRITICAL SECTION END
   }
 }
 
-void handle_connection(int socket, IA client_addr) {
+void handle_connection(conn_ctx_t *ctx) {
+  int socket = ctx->socket;
   CanaryMsg msg;
+
+  free(ctx);
 
   if (receive_msg(socket, &msg) == -1) {
     send_error_msg(socket, "Could not receive message");
@@ -110,12 +196,18 @@ void handle_put(uint8_t *payload) {
   int value;
 
   unpack_string_int(&key, &value, payload);
+
+  // BEGIN CRITICAL SECTION
+  pthread_mutex_lock(&cache_lock);
   lru_entry_t *removed = put(cache, key, value);
+  pthread_mutex_unlock(&cache_lock);
+  // END CRITICAL SECTION
 
   printf("Put key value pair (%s, %d) ", key, value);
   if (removed != NULL) {
     printf("and expelled key value pair (%s, %d) from cache\n", removed->key,
            removed->value);
+    free(removed);
   } else {
     printf("in cache\n");
   }
@@ -127,7 +219,12 @@ void handle_get(int socket, uint8_t *payload) {
   char *key = (char *)payload;
 
   printf("Client request value for key %s\n", key);
+
+  // BEGIN CRITICAL SECTION
+  pthread_mutex_lock(&cache_lock);
   int *value = get(cache, key);
+  pthread_mutex_unlock(&cache_lock);
+  // END CRITICAL SECTION
 
   if (value == NULL) {
     printf("No value found\n\n");

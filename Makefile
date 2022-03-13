@@ -65,14 +65,14 @@ run: $(BINDIR) $(OBJDIR) $(BINS)
 	tmux new-window -n main 
 	tmux split-window -h "./bin/cnf"
 	tmux new-window -n shard   
-	tmux split-window -h "./bin/shard 127.0.0.1 6000 10"
-	tmux split-window -v  "./bin/shard 127.0.0.1 6001 10"
+	tmux split-window -h "./bin/shard -p 6000"
+	tmux split-window -v  "./bin/shard -p 6001"
 	tmux select-pane -t 0
-	tmux split-window -v "./bin/shard 127.0.0.1 6002 10"
-	tmux send-keys -t 0 "./bin/shard 127.0.0.1 6003 10" C-m
+	tmux split-window -v "./bin/shard -p 6002"
+	tmux send-keys -t 0 "./bin/shard -p 6003" C-m
 	tmux select-window -t main
 	tmux select-pane -t 0
-	tmux send-keys "cd bin" C-m
+	tmux send-keys "./bin/canary-cli" C-m
 	tmux attach-session -d -t canary
 
 
