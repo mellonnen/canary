@@ -16,69 +16,96 @@
 #include <time.h>
 #include <unistd.h>
 
+// ---------------- DEFAULT VALUES ----------------
 #define DEFAULT_CNF_PORT 8080
 #define BACKLOG 100
-
 #define MAX_MASTER_SHARDS 100
 #define MAX_FLWR_PER_MASTER 2
-
 #define MAXTHREADS 10
 #define HEARTBEAT_INTERVAL_WITH_SLACK 15
 #define SHARD_MAITNENANCE_INTERVAL 20
 
+// ---------------- FUNCTION PROTOTYPES ------------
+
+// Runner functions.
+int run(in_port_t port);
+
+// Thread functions.
+void *worker_thread(void *arg);
+void *shard_maintenance_thread(void *arg);
+
+// Handlers.
+void handle_connection(conn_ctx_t *ctx);
+void handle_master_shard_registration(int socket, uint8_t *payload, IA addr);
+void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr);
+void handle_shard_selection(int socket, uint8_t *payload);
+void handle_shard_heartbeat(uint8_t *payload);
+
+// Utilities
+int compare_shards(const void *a, const void *b);
+
+// ---------------- CUSTOM TYPES ------------------
+
+// Represents the "location" of a shard in the network.
 typedef struct {
   IA addr;
   in_port_t port;
 } shard_t;
 
+// Represents follower shard.
 typedef struct {
   shard_t shard;
-  time_t expiration;
-  bool expired;
+  time_t expiration; // timestamp of when this shard expires.
 } follower_shard_t;
 
+// Represents Master shard.
 typedef struct {
-  uint32_t id;
+  uint32_t id; // randomly generated id for consistent hashing.
   shard_t shard;
-  time_t expiration;
-  bool expired;
+  time_t expiration; // timestamp of when this shard expires.
+  bool expired;      // flag that marks if this shard has expired.
   int num_flwrs;
   follower_shard_t *flwrs[MAX_FLWR_PER_MASTER];
 } master_shard_t;
 
+// ---------------- GLOBAL VARIABLES --------------
+
+// master shard array. ALWAYS in order of ids.
 master_shard_t mstr_shards[MAX_MASTER_SHARDS];
 pthread_rwlock_t shards_lock;
 
+// Threading related variables.
+pthread_t thread_pool[MAXTHREADS], shard_maintenance;
+conn_queue_t conn_q;
+pthread_cond_t conn_q_cond;
+pthread_mutex_t conn_q_lock;
+
+// Configurable values.
 int num_mstr_shards = 0;
 int max_mstr_shards = MAX_MASTER_SHARDS;
 int max_flwr_per_master = MAX_FLWR_PER_MASTER;
 int flwr_per_master = 0;
 
-pthread_t thread_pool[MAXTHREADS], shard_maitnenance;
+// ---------------- IMPLEMENTATION -----------------
 
-conn_queue_t conn_q;
-pthread_cond_t conn_q_cond;
-pthread_mutex_t conn_q_lock;
-
-int run(in_port_t port);
-void *worker_thread(void *arg);
-void *shard_maintenance_thread(void *arg);
-void handle_connection(conn_ctx_t *ctx);
-void handle_master_shard_registration(int socket, uint8_t *payload, IA addr);
-void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr);
-
-void handle_shard_selection(int socket, uint8_t *payload);
-void handle_shard_heartbeat(uint8_t *payload);
-
-int compare_shards(const void *a, const void *b);
-
+/**
+ * @brief Runner code.
+ *
+ * - Parses commandline arguments int local/global values.
+ * - Starts shard maintenance thread.
+ * - Runs multithreaded socket server.
+ *
+ * @param argc - int
+ * @param argv  char *[]
+ * @return
+ */
 int main(int argc, char *argv[]) {
+  srand(time(NULL));
   int opt;
   in_port_t port = DEFAULT_CNF_PORT;
   int num_threads = MAXTHREADS;
 
-  srand(time(NULL));
-
+  // Parse flags.
   while ((opt = getopt(argc, argv, "p:t") != -1)) {
     switch (opt) {
     case 'p':
@@ -93,17 +120,30 @@ int main(int argc, char *argv[]) {
       exit(EXIT_FAILURE);
     }
   }
-  pthread_create(&shard_maitnenance, NULL, shard_maintenance_thread, NULL);
+
+  // Create threads.
+  pthread_create(&shard_maintenance, NULL, shard_maintenance_thread, NULL);
+  conn_q = create_queue();
   for (long i = 0; i < num_threads; i++) {
     pthread_create(&thread_pool[i], NULL, worker_thread, (void *)i);
   }
 
+  // Run server.
   if (run(port) == -1)
     exit(EXIT_FAILURE);
 
   return 0;
 }
 
+// Runner functions
+
+/**
+ * @brief Runs the multithreaded socket server. Will receive connections and add
+ * them to a work queue.
+ *
+ * @param port - in_port_t
+ * @return -1 if error occurred, 0 otherwise.
+ */
 int run(in_port_t port) {
   int server_socket, client_socket, addr_size;
   SA_IN client_addr;
@@ -111,7 +151,6 @@ int run(in_port_t port) {
   server_socket = bind_n_listen_socket(port, BACKLOG);
 
   while (1) {
-    printf("Waiting for connections...\n\n");
     addr_size = sizeof(SA_IN);
 
     if ((client_socket = accept(server_socket, (SA *)&client_addr,
@@ -132,6 +171,11 @@ int run(in_port_t port) {
   }
 }
 
+/**
+ * @brief Will grab a connection of the queue and handle it accordingly.
+ *
+ * @param arg - void *
+ */
 void *worker_thread(void *arg) {
   long tid = (long)arg;
   while (1) {
@@ -155,6 +199,12 @@ void *worker_thread(void *arg) {
   }
 }
 
+/**
+ * @brief Will periodically go through shards and remove stale shards.
+ *
+ * TODO: must go through follower shards as well. Promote or remove.
+ * @param arg - void *
+ */
 void *shard_maintenance_thread(void *arg) {
   while (1) {
     sleep(SHARD_MAITNENANCE_INTERVAL);
@@ -163,14 +213,17 @@ void *shard_maintenance_thread(void *arg) {
     if (num_mstr_shards > 0) {
       // Scan through the shards and mark expired shards.
       int num_expired = 0;
+
       for (int i = 0; i < num_mstr_shards; i++) {
         if (mstr_shards[i].expiration < time(NULL)) {
           mstr_shards[i].expired = true;
           num_expired++;
+
           printf("Shard at %s:%d has expired\n",
                  inet_ntoa(mstr_shards[i].shard.addr),
                  mstr_shards[i].shard.port);
         }
+
         // Re-sort shards (expired will be put at the back).
         qsort(mstr_shards, num_mstr_shards, sizeof(master_shard_t),
               compare_shards);
@@ -182,6 +235,14 @@ void *shard_maintenance_thread(void *arg) {
   }
 }
 
+// Handlers.
+
+/**
+ * @brief Will handle a socket connection. Will in turn multiplex out to other
+ * handlers depending on what type of message is received.
+ *
+ * @param ctx - conn_ctx_t
+ */
 void handle_connection(conn_ctx_t *ctx) {
   int socket = ctx->socket;
   IA client_addr = ctx->client_addr;
@@ -215,9 +276,19 @@ void handle_connection(conn_ctx_t *ctx) {
   }
 }
 
+/**
+ * @brief Registers a new master shard
+ *
+ * @param socket - int
+ * @param payload - uint8_t *
+ * @param addr - IA
+ */
 void handle_master_shard_registration(int socket, uint8_t *payload, IA addr) {
   in_port_t port;
   unpack_short(&port, payload);
+
+  free(payload);
+  // create random id.
   uint32_t id = rand();
   master_shard_t mstr =
       (master_shard_t){.id = id,
@@ -234,6 +305,8 @@ void handle_master_shard_registration(int socket, uint8_t *payload, IA addr) {
     send_error_msg(socket, "Reached max shard capacity");
     return;
   }
+
+  // Add to the end of array and sort the array.
   mstr_shards[num_mstr_shards] = mstr;
   num_mstr_shards++;
   qsort(mstr_shards, num_mstr_shards, sizeof(master_shard_t), compare_shards);
@@ -243,12 +316,20 @@ void handle_master_shard_registration(int socket, uint8_t *payload, IA addr) {
   printf("Registered shard : {\n\tid: %d,\n\tip: %s\n\tport: %d\n}\n", mstr.id,
          inet_ntoa(mstr.shard.addr), mstr.shard.port);
 
+  // respond to shard.
   uint32_t n_id = htonl(id);
   send_msg(socket, (CanaryMsg){.type = Cnf2MstrRegister,
                                .payload_len = sizeof(uint32_t),
                                .payload = (uint8_t *)&n_id});
 }
 
+/**
+ * @brief Registers follower shard.
+ *
+ * @param socket - int
+ * @param payload - uint8_t *
+ * @param addr - IA
+ */
 void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
   if (flwr_per_master >= max_flwr_per_master) {
     send_error_msg(socket, "max capacity for follower shards reached");
@@ -261,7 +342,6 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
   follower_shard_t *flwr = malloc(sizeof(follower_shard_t));
 
   flwr->shard = (shard_t){.addr = addr, .port = port};
-  flwr->expired = false;
 
   int mstr_idx = -1, flwr_idx = -1;
   // START CRITICAL SECTION
@@ -320,6 +400,13 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
                                .payload = buf});
 }
 
+/**
+ * @brief Will tell a client which shard to turn to.
+ *
+ * TODO: should point to followers if it is a get request.
+ * @param socket - int
+ * @param payload - uint8_t *
+ */
 void handle_shard_selection(int socket, uint8_t *payload) {
   // cast payload to string and hash it.
   char *key = (char *)payload;
@@ -358,6 +445,11 @@ void handle_shard_selection(int socket, uint8_t *payload) {
       addr, port, key);
 }
 
+/**
+ * @brief Takes in a heartbeat and will update the expiration of the shard.
+ *
+ * @param payload - uint8_t;
+ */
 void handle_shard_heartbeat(uint8_t *payload) {
   uint32_t id = ntohl(*(uint32_t *)payload);
   // BEGIN CRITICAL SECTION
