@@ -68,7 +68,7 @@ run: $(BINDIR) $(OBJDIR) $(BINS)
 	tmux split-window -h "./bin/shard -p 6000"
 	tmux split-window -v  "./bin/shard -p 6001"
 	tmux select-pane -t 0
-	tmux split-window -v "./bin/shard -p 6002"
+	tmux split-window -v "./bin/shard -p 6002 -f"
 	tmux send-keys -t 0 "./bin/shard -p 6003 -f" C-m
 	tmux select-window -t main
 	tmux select-pane -t 0

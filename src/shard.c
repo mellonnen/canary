@@ -22,12 +22,26 @@
 #define MAX_THREADS 10
 #define MAX_CACHE_CAPACITY 1000
 #define HEARTBEAT_INTERVAL 10
+#define MAX_FLWR_PER_MASTER 2
 // ---------------- CUSTOM TYPES ------------------
 
 typedef enum {
   Master,
   Follower,
 } ShardRole;
+
+typedef struct {
+  IA addr;
+  in_port_t port;
+} follower_t;
+
+typedef struct {
+  uint8_t *payload;
+  uint32_t payload_len;
+  pthread_mutex_t lock;
+  pthread_cond_t cond;
+  bool consume;
+} follower_chan_t;
 
 // ---------------- FUNCTION PROTOTYPES ------------
 
@@ -42,8 +56,9 @@ void *follower_heartbeat_thread(void *arg);
 
 // Handlers.
 void handle_connection(conn_ctx_t *ctx);
-void handle_put(uint8_t *payload);
+void handle_put(uint8_t *payload, uint32_t payload_len);
 void handle_get(int socket, uint8_t *payload);
+void handle_flwr_connection(int socket, IA addr, uint8_t *payload);
 
 // ---------------- GLOBAL VARIABLES --------------
 
@@ -53,7 +68,9 @@ ShardRole role = Master;
 char cnf_addr[20] = DEFAULT_CNF_ADDR;
 in_port_t cnf_port = DEFAULT_CNF_PORT;
 
-// Variables related to threading.
+int num_flwrs = 0;
+follower_t *flwrs[MAX_FLWR_PER_MASTER] = {NULL};
+pthread_mutex_t flwr_lock;
 
 // Thread pool variables.
 conn_queue_t conn_q;
@@ -163,20 +180,28 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
   }
   send_msg(cnf_socket, req);
   receive_msg(cnf_socket, &resp);
+  close(cnf_socket);
 
   switch (resp.type) {
   case Cnf2MstrRegister:
     pthread_create(&heartbeat, NULL, master_heartbeat_thread,
                    (void *)resp.payload);
     printf("Successfully registered shard as a master shard\n");
-    close(cnf_socket);
     return 0;
-  case Cnf2FlwrRegister:
+  case Cnf2FlwrRegister: {
+    char *mstr_addr;
+    in_port_t mstr_port;
+    unpack_string_short(&mstr_addr, &mstr_port,
+                        (resp.payload + sizeof(uint32_t) * 2));
     pthread_create(&heartbeat, NULL, follower_heartbeat_thread,
                    (void *)resp.payload);
-    printf("Successfully registered shard as follower shard\n");
-    close(cnf_socket);
+    int mstr_socket = connect_to_socket(mstr_addr, mstr_port);
+    send_msg(mstr_socket, (CanaryMsg){.type = Flwr2MstrConnect,
+                                      .payload_len = sizeof(in_port_t),
+                                      .payload = payload});
+    printf("Successfully registered shard as a follower shard\n");
     return 0;
+  }
   case Error:
     printf("Failed to register shard: %s\n", resp.payload);
     break;
@@ -186,7 +211,6 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
   }
 
   free(resp.payload);
-  close(cnf_socket);
   return -1;
 }
 
@@ -301,6 +325,7 @@ void *follower_heartbeat_thread(void *arg) {
   uint8_t *cnf_payload = (uint8_t *)arg;
   uint8_t payload[payload_len];
   memcpy(payload, cnf_payload, payload_len);
+  free(arg);
 
   CanaryMsg msg = {.type = Flwr2CnfHeartbeat,
                    .payload_len = payload_len,
@@ -328,6 +353,7 @@ void *follower_heartbeat_thread(void *arg) {
  */
 void handle_connection(conn_ctx_t *ctx) {
   int socket = ctx->socket;
+  IA client_addr = ctx->client_addr;
   CanaryMsg msg;
 
   free(ctx); // we have copied the necessary data.
@@ -340,23 +366,43 @@ void handle_connection(conn_ctx_t *ctx) {
   // Multiplex out to other handlers.
   switch (msg.type) {
   case Client2MstrPut:
-    handle_put(msg.payload);
+    if (role != Master) {
+      send_error_msg(socket, "Not master shard");
+    } else {
+      handle_put(msg.payload, msg.payload_len);
+    }
+    break;
+  case Mstr2FlwrReplicate:
+    if (role != Follower) {
+      send_error_msg(socket, "Not follower shard");
+    } else {
+      handle_put(msg.payload, msg.payload_len);
+    }
     break;
   case Client2ShardGet:
     handle_get(socket, msg.payload);
+    break;
+  case Flwr2MstrConnect:
+    if (role != Master) {
+      send_error_msg(socket, "Not master shard");
+    } else {
+      handle_flwr_connection(socket, client_addr, msg.payload);
+    }
     break;
   default:
     send_error_msg(socket, "Incorrect Canary message type");
     break;
   }
+  close(socket);
 }
 
 /**
- * @brief Handles a `put` operation by a client.
+ * @brief Handles a `put` operation by a client. If the role of the shard is
+ * `Master` it will send the payload to all listening follower channels.
  *
  * @param payload - uint8_t *
  */
-void handle_put(uint8_t *payload) {
+void handle_put(uint8_t *payload, uint32_t payload_len) {
   char *key;
   int value;
 
@@ -376,6 +422,29 @@ void handle_put(uint8_t *payload) {
   } else {
     printf("in cache\n");
   }
+
+  // If master replicate tho followers
+  if (role == Master) {
+    // BEGIN CRITICAL SECTION
+    pthread_mutex_lock(&flwr_lock);
+    for (int i = 0; i < MAX_FLWR_PER_MASTER; i++) {
+      if (flwrs[i] == NULL)
+        continue;
+
+      int socket = connect_to_socket(inet_ntoa(flwrs[i]->addr), flwrs[i]->port);
+      if (socket == -1) {
+        free(flwrs[i]);
+        flwrs[i] = NULL;
+      }
+      send_msg(socket, (CanaryMsg){.type = Mstr2FlwrReplicate,
+                                   .payload_len = payload_len,
+                                   .payload = payload});
+      close(socket);
+    }
+    pthread_mutex_unlock(&flwr_lock);
+    // END CRITICAL SECTION
+  }
+  free(payload);
 }
 
 /**
@@ -406,4 +475,38 @@ void handle_get(int socket, uint8_t *payload) {
     msg.payload = (uint8_t *)value;
   }
   send_msg(socket, msg);
+}
+
+/**
+ * @brief Will register a new follower
+ *
+ *
+ * @param socket - int
+ */
+void handle_flwr_connection(int socket, IA addr, uint8_t *payload) {
+  in_port_t port;
+  unpack_short(&port, payload);
+  int idx = -1;
+  follower_t *flwr;
+
+  // BEGIN CRITICAL SECTION
+  pthread_mutex_lock(&flwr_lock);
+
+  if (num_flwrs >= MAX_FLWR_PER_MASTER) {
+    send_error_msg(socket, "Follower capacity reached");
+  } else {
+    // Create channel.
+    flwr = malloc(sizeof(follower_t));
+    *flwr = (follower_t){.addr = addr, .port = port};
+
+    for (idx = 0; idx < MAX_FLWR_PER_MASTER; idx++) {
+      if (flwrs[idx] == NULL) {
+        flwrs[idx] = flwr;
+        num_flwrs++;
+        break;
+      }
+    }
+  }
+  pthread_mutex_unlock(&flwr_lock);
+  // END CRITICAL SECTION
 }
