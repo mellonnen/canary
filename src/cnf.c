@@ -85,7 +85,6 @@ pthread_mutex_t conn_q_lock;
 // Configurable values.
 int num_mstr_shards = 0;
 int max_mstr_shards = MAX_MASTER_SHARDS;
-int max_flwr_per_master = MAX_FLWR_PER_MASTER;
 int flwr_per_master = 0;
 
 // ---------------- IMPLEMENTATION -----------------
@@ -219,7 +218,7 @@ void *shard_maintenance_thread(void *arg) {
       int num_expired = 0;
 
       for (int i = 0; i < num_mstr_shards; i++) {
-        for (int j = 0; j < max_flwr_per_master; j++) {
+        for (int j = 0; j < MAX_FLWR_PER_MASTER; j++) {
           follower_shard_t *flwr = mstr_shards[i].flwrs[j];
           // Check follower shards expiration.
           if (flwr != NULL && flwr->expiration < time(NULL)) {
@@ -333,6 +332,7 @@ void handle_master_shard_registration(int socket, uint8_t *payload, IA addr) {
   mstr_shards[num_mstr_shards] = mstr;
   num_mstr_shards++;
   qsort(mstr_shards, num_mstr_shards, sizeof(master_shard_t), compare_shards);
+  flwr_per_master = 0;
   pthread_rwlock_unlock(&shards_lock);
   // CRITICAL SECTION END
 
@@ -354,7 +354,7 @@ void handle_master_shard_registration(int socket, uint8_t *payload, IA addr) {
  * @param addr - IA
  */
 void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
-  if (flwr_per_master >= max_flwr_per_master) {
+  if (flwr_per_master >= MAX_FLWR_PER_MASTER) {
     send_error_msg(socket, "max capacity for follower shards reached");
     return;
   }
@@ -376,7 +376,7 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
   // second follower to master shards.
   for (int i = 0; i < num_mstr_shards; i++) {
     // Check if this shard already has enough followers.
-    if (mstr_shards[i].num_flwrs >= max_flwr_per_master)
+    if (mstr_shards[i].num_flwrs > flwr_per_master)
       continue;
 
     // We are done with this "round".
@@ -384,7 +384,7 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
       flwr_per_master++;
 
     // Find the empty follower slot.
-    for (int j = 0; j < max_flwr_per_master; j++) {
+    for (int j = 0; j < MAX_FLWR_PER_MASTER; j++) {
       if (mstr_shards[i].flwrs[j] != NULL)
         continue;
 
