@@ -61,10 +61,13 @@ void handle_put(uint8_t *payload, uint32_t payload_len);
 void handle_get(int socket, uint8_t *payload);
 void handle_flwr_connection(int socket, IA addr, uint8_t *payload);
 void handle_replication(int socket, uint8_t *payload, uint32_t payload_len);
+void handle_promotion();
+void handle_redirection(uint8_t *payload);
 
 // ---------------- GLOBAL VARIABLES --------------
 
 ShardRole role = Master;
+pthread_rwlock_t role_lock;
 
 // Address and port of configuration service.
 char cnf_addr[20] = DEFAULT_CNF_ADDR;
@@ -176,6 +179,7 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
 
   req = (CanaryMsg){.payload_len = 2, .payload = payload};
 
+  // no need to use lock here as threads have not been started.
   if (role == Master) {
     req.type = Mstr2CnfRegister;
   } else {
@@ -333,6 +337,18 @@ void *follower_heartbeat_thread(void *arg) {
   // sleep -> send message -> sleep ...
   while (1) {
     sleep(HEARTBEAT_INTERVAL);
+    // BEGIN CRITICAL SECTION
+    pthread_rwlock_rdlock(&role_lock);
+    if (role == Master) {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+      uint8_t *mstr_payload = malloc(sizeof(uint32_t));
+      memcpy(mstr_payload, payload, sizeof(uint32_t));
+      close(socket);
+      master_heartbeat_thread((void *)mstr_payload);
+    }
+    // END CRITICAL SECTION
+    pthread_rwlock_unlock(&role_lock);
     if ((socket = connect_to_socket(cnf_addr, cnf_port)) == -1) {
       logfmt("Heartbeat thread could not connect to configuration service");
       continue;
@@ -365,16 +381,33 @@ void handle_connection(conn_ctx_t *ctx) {
   // Multiplex out to other handlers.
   switch (msg.type) {
   case Client2MstrPut:
+
+    // BEGIN CRITICAL SECTION
+    pthread_rwlock_rdlock(&role_lock);
     if (role != Master) {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+
       logfmt("follower received put message");
     } else {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+
       handle_put(msg.payload, msg.payload_len);
     }
     break;
   case Mstr2FlwrReplicate:
+    // BEGIN CRITICAL SECTION
+    pthread_rwlock_rdlock(&role_lock);
     if (role != Follower) {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+
       logfmt("master received replication message");
     } else {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+
       handle_put(msg.payload, msg.payload_len);
     }
     break;
@@ -382,10 +415,42 @@ void handle_connection(conn_ctx_t *ctx) {
     handle_get(socket, msg.payload);
     break;
   case Flwr2MstrConnect:
+    // BEGIN CRITICAL SECTION
+    pthread_rwlock_rdlock(&role_lock);
     if (role != Master) {
-      send_error_msg(socket, "Not master shard");
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+      logfmt("follower shard received follower connection");
     } else {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
       handle_flwr_connection(socket, client_addr, msg.payload);
+    }
+    break;
+  case Cnf2FlwrPromote:
+    // BEGIN CRITICAL SECTION
+    pthread_rwlock_rdlock(&role_lock);
+    if (role != Follower) {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+      logfmt("master shard received promotion connection");
+    } else {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+      handle_promotion();
+    }
+    break;
+  case Cnf2FlwrRedirect:
+    // BEGIN CRITICAL SECTION
+    pthread_rwlock_rdlock(&role_lock);
+    if (role != Follower) {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+      logfmt("master shard received promotion connection");
+    } else {
+      pthread_rwlock_unlock(&role_lock);
+      // END CRITICAL SECTION
+      handle_redirection(msg.payload);
     }
     break;
   default:
@@ -421,7 +486,12 @@ void handle_put(uint8_t *payload, uint32_t payload_len) {
   }
 
   // If master replicate tho followers
+
+  // BEGIN CRITICAL SECTION
+  pthread_rwlock_rdlock(&role_lock); // in theory this lock is not needed as a
+                                     // master cannot be "demoted"
   if (role == Master) {
+
     // BEGIN CRITICAL SECTION
     pthread_mutex_lock(&flwr_lock);
     for (int i = 0; i < MAX_FLWR_PER_MASTER; i++) {
@@ -441,6 +511,8 @@ void handle_put(uint8_t *payload, uint32_t payload_len) {
     pthread_mutex_unlock(&flwr_lock);
     // END CRITICAL SECTION
   }
+  pthread_rwlock_unlock(&role_lock);
+  // END CRITICAL SECTION
   free(payload);
 }
 
@@ -490,7 +562,6 @@ void handle_flwr_connection(int socket, IA addr, uint8_t *payload) {
   if (num_flwrs >= MAX_FLWR_PER_MASTER) {
     send_error_msg(socket, "Follower capacity reached");
   } else {
-    // Create channel.
     flwr = malloc(sizeof(follower_t));
     *flwr = (follower_t){.addr = addr, .port = port};
 
@@ -506,7 +577,44 @@ void handle_flwr_connection(int socket, IA addr, uint8_t *payload) {
   // END CRITICAL SECTION
 }
 
+/**
+ * @brief replicates the cache from the master.
+ *
+ * @param socket - int
+ * @param payload  - uint8_t *
+ * @param payload_len  - uint32_t
+ */
 void handle_replication(int socket, uint8_t *payload, uint32_t payload_len) {
   logfmt("replicating data from master shard");
   handle_put(payload, payload_len);
+}
+
+void handle_promotion() {
+  pthread_rwlock_wrlock(&role_lock);
+  role = Master;
+  pthread_rwlock_unlock(&role_lock);
+  logfmt("shard has been promoted to master");
+}
+
+void handle_redirection(uint8_t *payload) {
+  char *mstr_addr;
+  in_port_t mstr_port;
+  unpack_string_short(&mstr_addr, &mstr_port, payload);
+  free(payload);
+
+  int socket;
+  if ((socket = connect_to_socket(mstr_addr, mstr_port)) == -1) {
+    free(mstr_addr);
+    return;
+  }
+  send_msg(socket, (CanaryMsg){.type = Flwr2MstrConnect, .payload_len = 0});
+  CanaryMsg resp;
+  receive_msg(socket, &resp);
+
+  if (resp.type == Error) {
+    free(mstr_addr);
+    logfmt("unable to redirect to new master shard due to: %s", resp.payload);
+    exit(EXIT_FAILURE);
+  }
+  logfmt("redirected to new master shard at %s:%d ", mstr_addr, mstr_port);
 }

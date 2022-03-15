@@ -8,34 +8,36 @@
 
 typedef enum {
   Error,
-  // Register shards with cnf_svc
+  // Register shards with configuration service.
   Mstr2CnfRegister,
   Cnf2MstrRegister,
   Flwr2CnfRegister,
   Cnf2FlwrRegister,
 
-  // Shard heartbeats
+  // Shard heartbeats.
   Mstr2CnfHeartbeat,
   Flwr2CnfHeartbeat,
 
-  // Get shard cnf_svc
+  // Discover which shard to talk to.
   Client2CnfDiscover,
   Cnf2ClientDiscover,
 
-  // Get cache value from shard
+  // Get cache value from shard.
   Client2ShardGet,
   Shard2ClientGet,
 
-  // Put cache value in shard
+  // Put cache value in shard.
   Client2MstrPut,
 
   Flwr2MstrConnect,
   // Replicate the master shard.
   Mstr2FlwrReplicate,
 
-  // Promote follower shard
+  // Promote follower to master shard.
   Cnf2FlwrPromote,
-  // TODO: add message for flwr shards to become mstr
+
+  // Redirects Follower to new master shard.
+  Cnf2FlwrRedirect
 } CanaryMsgType;
 
 typedef struct {

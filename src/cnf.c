@@ -216,31 +216,79 @@ void *shard_maintenance_thread(void *arg) {
       int num_expired = 0;
 
       for (int i = 0; i < num_mstr_shards; i++) {
-        for (int j = 0; j < MAX_FLWR_PER_MASTER; j++) {
-          follower_shard_t *flwr = mstr_shards[i].flwrs[j];
-          // Check follower shards expiration.
-          if (flwr != NULL && flwr->expiration < time(NULL)) {
+        master_shard_t *mstr = &mstr_shards[i];
+        if (mstr->num_flwrs > 0) {
 
-            logfmt("follower shard at %s:%d has expired",
-                   inet_ntoa(mstr_shards[i].flwrs[j]->shard.addr),
-                   mstr_shards[i].flwrs[j]->shard.port);
-            // free pointer and sett slot to NULL
-            free(mstr_shards[i].flwrs[j]);
-            mstr_shards[i].flwrs[j] = NULL;
-            // update local and global flwr count.
-            mstr_shards[i].num_flwrs--;
-            if (flwr_per_master > 0)
-              flwr_per_master--;
+          for (int j = 0; j < MAX_FLWR_PER_MASTER; j++) {
+            follower_shard_t *flwr = mstr->flwrs[j];
+            // Check follower shards expiration.
+            if (flwr != NULL && flwr->expiration < time(NULL)) {
+              logfmt("follower at %s:%d to master shard with id %d has expired",
+                     inet_ntoa(flwr->shard.addr), flwr->shard.port, mstr->id);
+              // free pointer and sett slot to NULL
+              free(flwr);
+              flwr = NULL;
+              // update local and global flwr count.
+              mstr->num_flwrs--;
+              if (flwr_per_master > 0)
+                flwr_per_master--;
+            }
           }
         }
-        if (mstr_shards[i].expiration < time(NULL)) {
-          // TODO: Promote shard here
-          mstr_shards[i].expired = true;
-          num_expired++;
-
+        if (mstr->expiration < time(NULL)) {
           logfmt("master shard at %s:%d has expired",
-                 inet_ntoa(mstr_shards[i].shard.addr),
-                 mstr_shards[i].shard.port);
+                 inet_ntoa(mstr->shard.addr), mstr->shard.port);
+
+          if (mstr->num_flwrs > 0) {
+            for (int j = 0; j < MAX_FLWR_PER_MASTER; j++) {
+              follower_shard_t *flwr = mstr->flwrs[j];
+              if (flwr == NULL) {
+                continue;
+              }
+              mstr->shard = flwr->shard;
+              mstr->expiration = time(NULL) + HEARTBEAT_INTERVAL_WITH_SLACK;
+              mstr->num_flwrs--;
+              free(flwr);
+              mstr->flwrs[j] = NULL;
+
+              // Send promote message
+              int mstr_socket = connect_to_socket(inet_ntoa(mstr->shard.addr),
+                                                  mstr->shard.port);
+              send_msg(mstr_socket,
+                       (CanaryMsg){.type = Cnf2FlwrPromote, .payload_len = 0});
+
+              logfmt(
+                  "follower shard at %s:%d has been promoted to master shard",
+                  inet_ntoa(mstr->shard.addr), mstr->shard.port);
+
+              // Tell other followers to redirect.
+              if (mstr->num_flwrs > 0) {
+                char *mstr_addr_str = inet_ntoa(mstr->shard.addr);
+                uint32_t buf_len = sizeof(in_port_t) + sizeof(uint32_t) +
+                                   strlen(mstr_addr_str) + 1;
+                uint8_t *buf = malloc(buf_len);
+                pack_string_short(mstr_addr_str, strlen(mstr_addr_str) + 1,
+                                  mstr->shard.port, buf);
+
+                for (int k = 0; k < MAX_FLWR_PER_MASTER; k++) {
+                  if (mstr->flwrs[k] != NULL) {
+                    int flwr_socket =
+                        connect_to_socket(inet_ntoa(mstr->flwrs[k]->shard.addr),
+                                          mstr->flwrs[k]->shard.port);
+                    send_msg(flwr_socket,
+                             (CanaryMsg){.type = Cnf2FlwrRedirect,
+                                         .payload_len = sizeof(in_port_t),
+                                         .payload = buf});
+                  }
+                }
+                free(buf);
+              }
+              break;
+            }
+          } else {
+            mstr_shards[i].expired = true;
+            num_expired++;
+          }
         }
 
         // Re-sort shards (expired will be put at the back).
