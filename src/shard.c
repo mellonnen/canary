@@ -462,10 +462,10 @@ void handle_get(int socket, uint8_t *payload) {
   // END CRITICAL SECTION
 
   if (value == NULL) {
-    logfmt("no value cached for key \"%s\"", key);
+    logfmt("no found for key %s in cache", key);
     msg.payload_len = 0;
   } else {
-    logfmt("value %d cached for key \"%s\"", *value, key);
+    logfmt("value %d found for key %s in cache", *value, key);
     msg.payload_len = sizeof(int);
     msg.payload = (uint8_t *)value;
   }

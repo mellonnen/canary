@@ -1,6 +1,8 @@
 #include "client.h"
+#include <string.h>
 
-int get_shard(int socket, char *key, char **addr, in_port_t *port);
+int get_shard(int socket, const char *op, char *key, char **addr,
+              in_port_t *port);
 int *get_from_shard(int socket, char *key);
 void put_in_shard(int socket, char *key, int value);
 
@@ -16,7 +18,7 @@ int *canary_get(CanaryCache *cache, char *key) {
   if ((cnf_socket = connect_to_socket(cache->cnf_addr, cache->cnf_port)) == -1)
     return NULL;
 
-  if (get_shard(cnf_socket, key, &shard_addr, &shard_port) == -1)
+  if (get_shard(cnf_socket, "get", key, &shard_addr, &shard_port) == -1)
     return NULL;
 
   if ((shard_socket = connect_to_socket(shard_addr, shard_port)) == -1)
@@ -33,7 +35,7 @@ void canary_put(CanaryCache *cache, char *key, int value) {
   if ((cnf_socket = connect_to_socket(cache->cnf_addr, cache->cnf_port)) == -1)
     return;
 
-  if (get_shard(cnf_socket, key, &shard_addr, &shard_port) == -1)
+  if (get_shard(cnf_socket, "put", key, &shard_addr, &shard_port) == -1)
     return;
 
   if ((shard_socket = connect_to_socket(shard_addr, shard_port)) == -1)
@@ -41,14 +43,20 @@ void canary_put(CanaryCache *cache, char *key, int value) {
   put_in_shard(shard_socket, key, value);
 }
 
-int get_shard(int socket, char *key, char **addr, in_port_t *port) {
+int get_shard(int socket, const char *op, char *key, char **addr,
+              in_port_t *port) {
   CanaryMsg req, resp;
+  uint32_t payload_len = 4 + strlen(key) + 1;
+  uint8_t *payload = malloc(payload_len);
+  memcpy(payload, op, 4);
+  memcpy(payload + 4, key, strlen(key) + 1);
 
   req = (CanaryMsg){.type = Client2CnfDiscover,
-                    .payload_len = strlen(key) + 1,
-                    .payload = (uint8_t *)key};
+                    .payload_len = payload_len,
+                    .payload = payload};
 
   send_msg(socket, req);
+  free(payload);
   receive_msg(socket, &resp);
 
   if (resp.type != Cnf2ClientDiscover)

@@ -63,7 +63,7 @@ void *shard_maintenance_thread(void *arg);
 void handle_connection(conn_ctx_t *ctx);
 void handle_master_shard_registration(int socket, uint8_t *payload, IA addr);
 void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr);
-void handle_shard_selection(int socket, uint8_t *payload);
+void handle_shard_discovery(int socket, uint8_t *payload);
 void handle_master_shard_heartbeat(uint8_t *payload);
 void handle_flwr_shard_heartbeat(uint8_t *payload);
 
@@ -282,7 +282,7 @@ void handle_connection(conn_ctx_t *ctx) {
     handle_flwr_shard_registration(socket, msg.payload, client_addr);
     break;
   case Client2CnfDiscover:
-    handle_shard_selection(socket, msg.payload);
+    handle_shard_discovery(socket, msg.payload);
     break;
   case Mstr2CnfHeartbeat:
     handle_master_shard_heartbeat(msg.payload);
@@ -433,9 +433,17 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
  * @param socket - int
  * @param payload - uint8_t *
  */
-void handle_shard_selection(int socket, uint8_t *payload) {
+void handle_shard_discovery(int socket, uint8_t *payload) {
   // cast payload to string and hash it.
-  char *key = (char *)payload;
+  char *op = (char *)payload;
+  char *key = (char *)(payload + 4);
+  bool op_is_get = strcmp(op, "get") == 0;
+  if (strcmp(op, "put") != 0 && !op_is_get) {
+    send_error_msg(socket, "invalid operation");
+    free(payload);
+    logfmt("received invalid operation %s from client", op);
+    return;
+  }
   size_t hash = hash_djb2(key) % RAND_MAX;
 
   // Binary search to find the first shard.id > hash.
@@ -452,22 +460,36 @@ void handle_shard_selection(int socket, uint8_t *payload) {
 
   // If we cant find an element s.t shard.id > hash, we wrap around to zero.
   int idx = start > num_mstr_shards ? 0 : start;
+  IA addr;
+  in_port_t port;
+
+  int r = rand() % (mstr_shards[idx].num_flwrs + 1);
+  logfmt("r = %d", r);
+  if (op_is_get && r != mstr_shards[idx].num_flwrs) {
+    addr = mstr_shards[idx].flwrs[r]->shard.addr;
+    port = mstr_shards[idx].flwrs[r]->shard.port;
+    logfmt("client will be routed to follower shard");
+  } else {
+    logfmt("client will be routed to master shard");
+    addr = mstr_shards[idx].shard.addr;
+    port = mstr_shards[idx].shard.port;
+  }
 
   // Pack the payload and send the message to client.
-  char *addr = inet_ntoa(mstr_shards[idx].shard.addr);
-  in_port_t port = mstr_shards[idx].shard.port;
-  uint32_t addr_len = strlen(addr) + 1;
+  char *addr_str = inet_ntoa(addr);
+  uint32_t addr_len = strlen(addr_str) + 1;
   uint32_t buf_len = sizeof(addr_len) + addr_len + sizeof(port);
   uint8_t *buf = malloc(buf_len);
 
-  pack_string_short(addr, addr_len, port, buf);
+  pack_string_short(addr_str, addr_len, port, buf);
 
   CanaryMsg msg = {
       .type = Cnf2ClientDiscover, .payload_len = buf_len, .payload = buf};
 
   send_msg(socket, msg);
   logfmt("notified client that shard at %s:%d has responsibility of key %s",
-         addr, port, key);
+         addr_str, port, key);
+  free(buf);
 }
 
 /**
