@@ -195,8 +195,8 @@ void *worker_thread(void *arg) {
     pthread_mutex_unlock(&conn_q_lock);
     // CRITICAL SECTION END
 
-    printf("Thread: %ld is handling connection from %s:%d\n", tid,
-           inet_ntoa(ctx->client_addr), ctx->port);
+    // printf("Thread: %ld is handling connection from %s:%d\n", tid,
+    //        inet_ntoa(ctx->client_addr), ctx->port);
 
     handle_connection(ctx);
   }
@@ -376,7 +376,8 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
   // second follower to master shards.
   for (int i = 0; i < num_mstr_shards; i++) {
     // Check if this shard already has enough followers.
-    if (mstr_shards[i].num_flwrs > flwr_per_master)
+    if (mstr_shards[i].num_flwrs > 0 &&
+        mstr_shards[i].num_flwrs > flwr_per_master)
       continue;
 
     // We are done with this "round".
@@ -393,8 +394,14 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
       mstr_idx = i;
       flwr_idx = j;
       mstr_shards[i].num_flwrs++;
+
+      printf("Added shard to master shard at %s:%d\n",
+             inet_ntoa(mstr_shards[i].shard.addr), mstr_shards[i].shard.port);
+      printf("flwe_per_master = %d\n", flwr_per_master);
+      printf("num_flwrs = %d\n", mstr_shards[i].num_flwrs);
       break;
     }
+    break;
   }
   pthread_rwlock_unlock(&shards_lock);
   // END CRITICAL SECTION
