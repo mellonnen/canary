@@ -31,7 +31,7 @@ TESTBINS=$(patsubst $(TESTDIR)/%.c, $(TESTDIR)/bin/%, $(TESTS))
 all: $(BINDIR) $(OBJDIR) $(BINS)
 
 # Compile binaries.
-$(BINS):$(BINDIR)/%: $(SRCDIR)/%.c $(OBJS)
+$(BINS):$(BINDIR)/%: $(SRCDIR)/%.c $(OBJS) $(SRCDIR)/constants.h
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 
 # Compile library object files.

@@ -3,6 +3,7 @@
 #include "../lib/hashing/hashing.h"
 #include "../lib/logger/logger.h"
 #include "../lib/nethelpers/nethelpers.h"
+#include "constants.h"
 #include <arpa/inet.h>
 #include <bits/getopt_core.h>
 #include <errno.h>
@@ -16,15 +17,6 @@
 #include <sys/socket.h>
 #include <time.h>
 #include <unistd.h>
-
-// ---------------- DEFAULT VALUES ----------------
-#define DEFAULT_CNF_PORT 8080
-#define BACKLOG 100
-#define MAX_MASTER_SHARDS 100
-#define MAX_FLWR_PER_MASTER 2
-#define MAXTHREADS 10
-#define HEARTBEAT_INTERVAL_WITH_SLACK 15
-#define SHARD_MAITNENANCE_INTERVAL 30
 
 // ---------------- CUSTOM TYPES ------------------
 
@@ -78,7 +70,7 @@ master_shard_t mstr_shards[MAX_MASTER_SHARDS];
 pthread_rwlock_t shards_lock;
 
 // Threading related variables.
-pthread_t thread_pool[MAXTHREADS], shard_maintenance;
+pthread_t thread_pool[MAX_THREADS], shard_maintenance;
 conn_queue_t conn_q;
 pthread_cond_t conn_q_cond;
 pthread_mutex_t conn_q_lock;
@@ -105,7 +97,7 @@ int main(int argc, char *argv[]) {
   srand(time(NULL));
   int opt;
   in_port_t port = DEFAULT_CNF_PORT;
-  int num_threads = MAXTHREADS;
+  int num_threads = MAX_THREADS;
 
   // Parse flags.
   while ((opt = getopt(argc, argv, "p:t") != -1)) {
@@ -115,7 +107,7 @@ int main(int argc, char *argv[]) {
       break;
     case 't':
       num_threads = atoi(optarg);
-      num_threads = num_threads > MAXTHREADS ? MAXTHREADS : num_threads;
+      num_threads = num_threads > MAX_THREADS ? MAX_THREADS : num_threads;
       break;
     default:
       printf("Usage: %s [-p <cnf-port>] [-t <num-threads>]\n", argv[0]);

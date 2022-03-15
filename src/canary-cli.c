@@ -1,12 +1,10 @@
 #include "../lib/client/client.h"
+#include "constants.h"
 #include <bits/getopt_core.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
-
-#define DEFAULT_CNF_PORT 8080
-#define DEFAULT_CNF_ADDR "127.0.0.1"
 
 CanaryCache cache;
 

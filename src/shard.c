@@ -3,6 +3,7 @@
 #include "../lib/logger/logger.h"
 #include "../lib/lru//lru.h"
 #include "../lib/nethelpers/nethelpers.h"
+#include "constants.h"
 #include <arpa/inet.h>
 #include <bits/getopt_core.h>
 #include <errno.h>
@@ -16,14 +17,8 @@
 #include <unistd.h>
 
 // ---------------- DEFAULT VALUES ----------------
-#define DEFAULT_CNF_PORT 8080
-#define DEFAULT_CNF_ADDR "127.0.0.1"
 #define DEFAULT_SHARD_PORT 6969
-#define BACKLOG 100
-#define MAX_THREADS 10
 #define MAX_CACHE_CAPACITY 1000
-#define HEARTBEAT_INTERVAL 10
-#define MAX_FLWR_PER_MASTER 2
 // ---------------- CUSTOM TYPES ------------------
 
 typedef enum {
