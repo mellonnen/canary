@@ -1,6 +1,7 @@
 #include "../lib/connq/connq.h"
 #include "../lib/cproto/cproto.h"
-#include "../lib/hashing//hashing.h"
+#include "../lib/hashing/hashing.h"
+#include "../lib/logger/logger.h"
 #include "../lib/nethelpers/nethelpers.h"
 #include <arpa/inet.h>
 #include <bits/getopt_core.h>
@@ -126,9 +127,10 @@ int main(int argc, char *argv[]) {
   pthread_create(&shard_maintenance, NULL, shard_maintenance_thread, NULL);
   conn_q = create_queue();
   for (long i = 0; i < num_threads; i++) {
-    pthread_create(&thread_pool[i], NULL, worker_thread, (void *)i);
+    pthread_create(&thread_pool[i], NULL, worker_thread, NULL);
   }
 
+  logfmt("Starting Configuration service on port %d", port);
   // Run server.
   if (run(port) == -1)
     exit(EXIT_FAILURE);
@@ -156,7 +158,7 @@ int run(in_port_t port) {
 
     if ((client_socket = accept(server_socket, (SA *)&client_addr,
                                 (socklen_t *)&addr_size)) == -1) {
-      printf("accept failed!\n");
+      logfmt("accept failed");
       continue;
     }
 
@@ -180,7 +182,6 @@ int run(in_port_t port) {
  * @param arg - void *
  */
 void *worker_thread(void *arg) {
-  long tid = (long)arg;
   while (1) {
     conn_ctx_t *ctx;
 
@@ -194,9 +195,6 @@ void *worker_thread(void *arg) {
     }
     pthread_mutex_unlock(&conn_q_lock);
     // CRITICAL SECTION END
-
-    // printf("Thread: %ld is handling connection from %s:%d\n", tid,
-    //        inet_ntoa(ctx->client_addr), ctx->port);
 
     handle_connection(ctx);
   }
@@ -223,7 +221,7 @@ void *shard_maintenance_thread(void *arg) {
           // Check follower shards expiration.
           if (flwr != NULL && flwr->expiration < time(NULL)) {
 
-            printf("Follower shard at %s:%d has expired\n",
+            logfmt("follower shard at %s:%d has expired",
                    inet_ntoa(mstr_shards[i].flwrs[j]->shard.addr),
                    mstr_shards[i].flwrs[j]->shard.port);
             // free pointer and sett slot to NULL
@@ -240,7 +238,7 @@ void *shard_maintenance_thread(void *arg) {
           mstr_shards[i].expired = true;
           num_expired++;
 
-          printf("Master shard at %s:%d has expired\n",
+          logfmt("master shard at %s:%d has expired",
                  inet_ntoa(mstr_shards[i].shard.addr),
                  mstr_shards[i].shard.port);
         }
@@ -323,7 +321,7 @@ void handle_master_shard_registration(int socket, uint8_t *payload, IA addr) {
   // CRITICAL SECTION BEGIN
   pthread_rwlock_rdlock(&shards_lock);
   if (num_mstr_shards >= max_mstr_shards) {
-    printf("Could not register shard at %s:%d\n", inet_ntoa(addr), port);
+    logfmt("could not register shard at %s:%d", inet_ntoa(addr), port);
     send_error_msg(socket, "Reached max shard capacity");
     return;
   }
@@ -336,8 +334,8 @@ void handle_master_shard_registration(int socket, uint8_t *payload, IA addr) {
   pthread_rwlock_unlock(&shards_lock);
   // CRITICAL SECTION END
 
-  printf("Registered shard : {\n\tid: %d,\n\tip: %s\n\tport: %d\n}\n", mstr.id,
-         inet_ntoa(mstr.shard.addr), mstr.shard.port);
+  logfmt("registered new master shard at %s:%d with id %d",
+         inet_ntoa(mstr.shard.addr), mstr.shard.port, mstr.id);
 
   // respond to shard.
   uint32_t n_id = htonl(id);
@@ -395,10 +393,8 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
       flwr_idx = j;
       mstr_shards[i].num_flwrs++;
 
-      printf("Added shard to master shard at %s:%d\n",
-             inet_ntoa(mstr_shards[i].shard.addr), mstr_shards[i].shard.port);
-      printf("flwe_per_master = %d\n", flwr_per_master);
-      printf("num_flwrs = %d\n", mstr_shards[i].num_flwrs);
+      logfmt("register follower shard at %s:%d to master shard with id %d",
+             inet_ntoa(flwr->shard.addr), flwr->shard.port, mstr_shards[i].id);
       break;
     }
     break;
@@ -470,9 +466,8 @@ void handle_shard_selection(int socket, uint8_t *payload) {
       .type = Cnf2ClientDiscover, .payload_len = buf_len, .payload = buf};
 
   send_msg(socket, msg);
-  printf(
-      "Notified that shard at %s:%d has responsibility of key %s to client\n",
-      addr, port, key);
+  logfmt("notified client that shard at %s:%d has responsibility of key %s",
+         addr, port, key);
 }
 
 /**

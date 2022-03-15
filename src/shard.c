@@ -1,5 +1,6 @@
 #include "../lib/connq/connq.h"
 #include "../lib/cproto/cproto.h"
+#include "../lib/logger/logger.h"
 #include "../lib/lru//lru.h"
 #include "../lib/nethelpers/nethelpers.h"
 #include <arpa/inet.h>
@@ -59,6 +60,7 @@ void handle_connection(conn_ctx_t *ctx);
 void handle_put(uint8_t *payload, uint32_t payload_len);
 void handle_get(int socket, uint8_t *payload);
 void handle_flwr_connection(int socket, IA addr, uint8_t *payload);
+void handle_replication(int socket, uint8_t *payload, uint32_t payload_len);
 
 // ---------------- GLOBAL VARIABLES --------------
 
@@ -135,7 +137,7 @@ int main(int argc, char *argv[]) {
 
   // Register shard with configuration service.
   if (register_with_cnf(cnf_addr, cnf_port, shard_port) == -1) {
-    printf("Could not register with configuration service\n");
+    logfmt("Could not register with configuration service");
     exit(EXIT_FAILURE);
   }
 
@@ -145,9 +147,10 @@ int main(int argc, char *argv[]) {
     pthread_create(&thread_pool[i], NULL, worker_thread, (void *)i);
   }
 
+  logfmt("starting data shard server at port %d", shard_port);
   // Run socket server.
   if (run(shard_port) == -1) {
-    printf("Could not run socket server\n");
+    logfmt("could not run shard server");
     exit(EXIT_FAILURE);
   }
 }
@@ -186,7 +189,7 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
   case Cnf2MstrRegister:
     pthread_create(&heartbeat, NULL, master_heartbeat_thread,
                    (void *)resp.payload);
-    printf("Successfully registered shard as a master shard\n");
+    logfmt("Successfully registered shard as a master shard");
     return 0;
   case Cnf2FlwrRegister: {
     char *mstr_addr;
@@ -199,14 +202,14 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
     send_msg(mstr_socket, (CanaryMsg){.type = Flwr2MstrConnect,
                                       .payload_len = sizeof(in_port_t),
                                       .payload = payload});
-    printf("Successfully registered shard as a follower shard\n");
+    logfmt("Successfully registered shard as a follower shard");
     return 0;
   }
   case Error:
-    printf("Failed to register shard: %s\n", resp.payload);
+    logfmt("Failed to register shardd due to: %s", resp.payload);
     break;
   default:
-    printf("Received wrong message type %d\n", resp.type);
+    logfmt("Received wrong message type %d", resp.type);
     break;
   }
 
@@ -232,7 +235,7 @@ int run(in_port_t shard_port) {
     addr_size = sizeof(SA_IN);
     if ((client_socket = accept(shard_socket, (SA *)&client_addr,
                                 (socklen_t *)&addr_size)) == -1) {
-      printf("Accept failed\n");
+      logfmt("Accept failed");
       continue;
     }
 
@@ -259,7 +262,6 @@ int run(in_port_t shard_port) {
  * @param arg - void *
  */
 void *worker_thread(void *arg) {
-  long tid = (long)arg; // id for logging.
   while (1) {
     conn_ctx_t *ctx;
 
@@ -274,9 +276,6 @@ void *worker_thread(void *arg) {
     }
     pthread_mutex_unlock(&conn_q_lock);
     // CRITICAL SECTION END
-
-    printf("Thread: %ld is handling connection from %s:%d\n", tid,
-           inet_ntoa(ctx->client_addr), ctx->port);
 
     handle_connection(ctx);
   }
@@ -304,7 +303,7 @@ void *master_heartbeat_thread(void *arg) {
   while (1) {
     sleep(HEARTBEAT_INTERVAL);
     if ((socket = connect_to_socket(cnf_addr, cnf_port)) == -1) {
-      printf("Heartbeat thread could not connect to cnf\n");
+      logfmt("Heartbeat thread could not connect to configuration service");
       continue;
     }
     send_msg(socket, msg);
@@ -335,7 +334,7 @@ void *follower_heartbeat_thread(void *arg) {
   while (1) {
     sleep(HEARTBEAT_INTERVAL);
     if ((socket = connect_to_socket(cnf_addr, cnf_port)) == -1) {
-      printf("Heartbeat thread could not connect to cnf\n");
+      logfmt("Heartbeat thread could not connect to configuration service");
       continue;
     }
     send_msg(socket, msg);
@@ -367,14 +366,14 @@ void handle_connection(conn_ctx_t *ctx) {
   switch (msg.type) {
   case Client2MstrPut:
     if (role != Master) {
-      send_error_msg(socket, "Not master shard");
+      logfmt("follower received put message");
     } else {
       handle_put(msg.payload, msg.payload_len);
     }
     break;
   case Mstr2FlwrReplicate:
     if (role != Follower) {
-      send_error_msg(socket, "Not follower shard");
+      logfmt("master received replication message");
     } else {
       handle_put(msg.payload, msg.payload_len);
     }
@@ -414,13 +413,11 @@ void handle_put(uint8_t *payload, uint32_t payload_len) {
   pthread_mutex_unlock(&cache_lock);
   // END CRITICAL SECTION
 
-  printf("Put key value pair (%s, %d) ", key, value);
+  logfmt("Put key value pair (%s, %d)", key, value);
   if (removed != NULL) {
-    printf("and expelled key value pair (%s, %d) from cache\n", removed->key,
+    logfmt("expelled key value pair (%s, %d) from cache", removed->key,
            removed->value);
     free(removed);
-  } else {
-    printf("in cache\n");
   }
 
   // If master replicate tho followers
@@ -458,8 +455,6 @@ void handle_get(int socket, uint8_t *payload) {
 
   char *key = (char *)payload;
 
-  printf("Client request value for key %s\n", key);
-
   // BEGIN CRITICAL SECTION
   pthread_mutex_lock(&cache_lock);
   int *value = get(cache, key);
@@ -467,10 +462,10 @@ void handle_get(int socket, uint8_t *payload) {
   // END CRITICAL SECTION
 
   if (value == NULL) {
-    printf("No value found\n\n");
+    logfmt("no value cached for key \"%s\"", key);
     msg.payload_len = 0;
   } else {
-    printf("Found value %d\n\n", *value);
+    logfmt("value %d cached for key \"%s\"", *value, key);
     msg.payload_len = sizeof(int);
     msg.payload = (uint8_t *)value;
   }
@@ -509,4 +504,9 @@ void handle_flwr_connection(int socket, IA addr, uint8_t *payload) {
   }
   pthread_mutex_unlock(&flwr_lock);
   // END CRITICAL SECTION
+}
+
+void handle_replication(int socket, uint8_t *payload, uint32_t payload_len) {
+  logfmt("replicating data from master shard");
+  handle_put(payload, payload_len);
 }
