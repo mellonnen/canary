@@ -1,4 +1,12 @@
 #include "logger.h"
+
+/**
+ * @brief wraps printf with timestamp and thread_id info. Logs json object to
+ * stderr.
+ *
+ * @param format - char *
+ * @return
+ */
 int logfmt(const char *format, ...) {
   time_t now;
   time(&now);
