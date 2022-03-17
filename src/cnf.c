@@ -219,7 +219,7 @@ void *shard_maintenance_thread(void *arg) {
                      inet_ntoa(flwr->shard.addr), flwr->shard.port, mstr->id);
               // free pointer and sett slot to NULL
               free(flwr);
-              flwr = NULL;
+              mstr->flwrs[j] = NULL;
               // update local and global flwr count.
               mstr->num_flwrs--;
               if (flwr_per_master > 0)
@@ -332,6 +332,7 @@ void handle_connection(conn_ctx_t *ctx) {
     break;
   default:
     send_error_msg(socket, "Incorrect Canary message type");
+    free(msg.payload);
     break;
   }
 }
@@ -399,6 +400,7 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
 
   in_port_t port;
   unpack_short(&port, payload);
+  free(payload);
 
   follower_shard_t *flwr = malloc(sizeof(follower_shard_t));
 
@@ -464,6 +466,7 @@ void handle_flwr_shard_registration(int socket, uint8_t *payload, IA addr) {
   send_msg(socket, (CanaryMsg){.type = Cnf2FlwrRegister,
                                .payload_len = buf_len,
                                .payload = buf});
+  free(buf);
 }
 
 /**
@@ -530,6 +533,7 @@ void handle_shard_discovery(int socket, uint8_t *payload) {
   logfmt("notified client that shard at %s:%d has responsibility of key %s",
          addr_str, port, key);
   free(buf);
+  free(payload);
 }
 
 /**

@@ -169,7 +169,7 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
   CanaryMsg req, resp;
   int cnf_socket = connect_to_socket(cnf_addr, cnf_port);
 
-  uint8_t payload[2];
+  uint8_t payload[sizeof(in_port_t)];
   pack_short(shard_port, payload);
 
   req = (CanaryMsg){.payload_len = 2, .payload = payload};
@@ -189,6 +189,7 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
     pthread_create(&heartbeat, NULL, master_heartbeat_thread,
                    (void *)resp.payload);
     logfmt("Successfully registered shard as a master shard");
+    free(resp.payload);
     return 0;
   case Cnf2FlwrRegister: {
     char *mstr_addr;
@@ -201,6 +202,8 @@ int register_with_cnf(char *cnf_addr, in_port_t cnf_port,
     send_msg(mstr_socket, (CanaryMsg){.type = Flwr2MstrConnect,
                                       .payload_len = sizeof(in_port_t),
                                       .payload = payload});
+
+    free(resp.payload);
     logfmt("Successfully registered shard as a follower shard");
     return 0;
   }
@@ -297,7 +300,6 @@ void *master_heartbeat_thread(void *arg) {
                    .payload_len = payload_len,
                    .payload = payload};
 
-  free(arg);
   // sleep -> send message -> sleep ...
   while (1) {
     sleep(HEARTBEAT_INTERVAL);
@@ -323,7 +325,6 @@ void *follower_heartbeat_thread(void *arg) {
   uint8_t *cnf_payload = (uint8_t *)arg;
   uint8_t payload[payload_len];
   memcpy(payload, cnf_payload, payload_len);
-  free(arg);
 
   CanaryMsg msg = {.type = Flwr2CnfHeartbeat,
                    .payload_len = payload_len,
@@ -537,6 +538,7 @@ void handle_get(int socket, uint8_t *payload) {
     msg.payload = (uint8_t *)value;
   }
   send_msg(socket, msg);
+  free(payload);
 }
 
 /**
@@ -548,6 +550,7 @@ void handle_get(int socket, uint8_t *payload) {
 void handle_flwr_connection(int socket, IA addr, uint8_t *payload) {
   in_port_t port;
   unpack_short(&port, payload);
+  free(payload);
   int idx = -1;
   follower_t *flwr;
 
@@ -607,9 +610,12 @@ void handle_redirection(uint8_t *payload) {
   receive_msg(socket, &resp);
 
   if (resp.type == Error) {
-    free(mstr_addr);
     logfmt("unable to redirect to new master shard due to: %s", resp.payload);
+    free(resp.payload);
+    free(mstr_addr);
     exit(EXIT_FAILURE);
   }
   logfmt("redirected to new master shard at %s:%d ", mstr_addr, mstr_port);
+  free(resp.payload);
+  free(mstr_addr);
 }
