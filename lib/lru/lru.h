@@ -27,11 +27,19 @@ typedef struct {
   lru_entry_t *head, *tail;
 } lru_cache_t;
 
+typedef struct {
+  lru_entry_t *current_entry;
+  lru_cache_t *cache;
+} lru_iterator_t;
+
 lru_cache_t *create_lru_cache(size_t);
 void destroy_entry(lru_entry_t *entry);
 void destroy_lru_cache(lru_cache_t *);
 
 int *get(lru_cache_t *, char *);
 lru_entry_t *put(lru_cache_t *, char *, int);
+
+lru_iterator_t iterator(lru_cache_t *);
+lru_entry_t *next(lru_iterator_t *);
 
 #endif // __LRU_H__

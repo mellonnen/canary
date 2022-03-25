@@ -48,7 +48,7 @@ void test_put() {
   assert(cache->head->value == 3);
   printf("✅\n");
 
-  printf("\t\test updating tail entry...");
+  printf("\t\ttest updating tail entry...");
   removed = put(cache, "limpz", 3);
   assert(removed == NULL);
   assert(strcmp(cache->head->key, "limpz") == 0);
@@ -103,6 +103,41 @@ void test_get() {
 
   destroy_lru_cache(cache);
 }
+void test_iter() {
+  lru_cache_t *cache = create_lru_cache(3);
+
+  put(cache, "limp", 1);
+  put(cache, "limpz", 2);
+  put(cache, "limpan", 2);
+
+  lru_iterator_t iter = iterator(cache);
+  lru_entry_t *entry;
+
+  entry = next(&iter);
+  printf("\t\ttest first element...");
+  assert(entry->value == 1);
+  assert(strcmp(entry->key, "limp") == 0);
+  printf("✅\n");
+
+  entry = next(&iter);
+  printf("\t\ttest second element...");
+  assert(entry->value == 2);
+  assert(strcmp(entry->key, "limpz") == 0);
+  printf("✅\n");
+
+  entry = next(&iter);
+  printf("\t\ttest third element...");
+  assert(entry->value == 2);
+  assert(strcmp(entry->key, "limpan") == 0);
+  printf("✅\n");
+
+  entry = next(&iter);
+  printf("\t\ttest iterator empty...");
+  assert(entry == NULL);
+  printf("✅\n");
+
+  destroy_lru_cache(cache);
+}
 
 int main(int argc, char *argv[]) {
   printf("\nTEST FOR LRU CACHE:\n\n");
@@ -111,5 +146,8 @@ int main(int argc, char *argv[]) {
   printf("\n");
   printf("\tTesting get:\n");
   test_get();
+  printf("\n");
+  printf("\tTesting iterator:\n");
+  test_iter();
   return 0;
 }

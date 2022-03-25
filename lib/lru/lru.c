@@ -247,3 +247,28 @@ lru_entry_t *put(lru_cache_t *cache, char *key, int value) {
   cache->num_elements++;
   return remove;
 }
+
+/**
+ * @brief Creates a iterator object of the LRU cache. Will iterate in order of
+ * least recently used elements.
+ *
+ * @param cache - lru_cache_t *
+ * @return iterator object that wraps the provided cache.
+ */
+lru_iterator_t iterator(lru_cache_t *cache) {
+  return (lru_iterator_t){.cache = cache, .current_entry = cache->tail};
+}
+
+/**
+ * @brief Will get the next entry of the iterator.
+ *
+ * @param iter - lru_iterator_t *
+ * @return returns a pointer to a entry in the cache, returns NULL if the
+ * iterator is empty.
+ */
+lru_entry_t *next(lru_iterator_t *iter) {
+  lru_entry_t *ret = iter->current_entry;
+  if (ret != NULL)
+    iter->current_entry = ret->lru_prev;
+  return ret;
+}
